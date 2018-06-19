@@ -143,7 +143,7 @@ class DateTime {
       }
     };
     
-    // 一定要大減小(新剪舊)！！！
+    // 一定要大減小(近剪遠)！！！
     DateTime operator - (const DateTime &otherDate)const {
       bool isSubCarry = false;
       DateTime temp;

@@ -13,15 +13,20 @@
 #include <iostream>
 
 #include "../Sequence.hpp"
+#include "../PredictResult.hpp"
 using namespace std;
+
+typedef int elemType;
 
 class GSP {
 	public :
 		vector<elemType> literals;
 		int min_support;
 		
-		map<elemType, int> oneElementMap;	// 單個 element 出現次數
-		map<int, vector<Sequence> > miningPatternsMap;	// 第一個是長度(沒有 1) 2, 3, 4, 5, ~ n.
+		map<elemType, int> appCountMap;	// 單個 element 出現次數
+		// 第一個是長度(沒有 1) 2, 3, 4, 5, ~ n.
+		// Sequence 順序是由舊到新
+		map<int, vector<Sequence> > miningPatternsMap;
 		GSP(vector<elemType> literals) {
 			this->literals = literals;
 			min_support = 2;
@@ -36,11 +41,11 @@ class GSP {
 			// Scan the database to find 1-sequence.
 			//-----------------------------first scan-----------------------------------
 			GenerateOneSequence();
-			//--------------------------first scan end----------------------------------
+			//---------------------------first scan end---------------------------------
 			
 			// Get 1-frequency sequence
 			vector<elemType> oneSeq;
-			for(map<elemType, int>::iterator iter = oneElementMap.begin(); iter != oneElementMap.end(); iter ++)
+			for(map<elemType, int>::iterator iter = appCountMap.begin(); iter != appCountMap.end(); iter ++)
 			{
 				oneSeq.push_back(iter->first);
 			}
@@ -66,7 +71,7 @@ class GSP {
 		// First scan the database to get frequency is one itemset.
 		void GenerateOneSequence() {
 			map<elemType, int> dup;
-			oneElementMap.clear();
+			appCountMap.clear();
 			// count every item in the sequence.
 			for(int k = 0; k < literals.size(); k ++) {
 				dup[literals[k]]++;
@@ -75,13 +80,13 @@ class GSP {
 			// add up to become support.
 			for (map<elemType, int>::iterator iter = dup.begin(); iter != dup.end(); iter ++) {
 				if(iter->second >= min_support) {
-					oneElementMap[iter->first] = iter->second;
+					appCountMap[iter->first] = iter->second;
 				}
 			}
 			
 			// add to miningPatternsMap
 			vector<Sequence> oneSeqVec;
-			for (map<elemType, int>::iterator iter = oneElementMap.begin(); iter != oneElementMap.end(); iter++) {
+			for (map<elemType, int>::iterator iter = appCountMap.begin(); iter != appCountMap.end(); iter++) {
 				Itemset item;
 				item.item.push_back(iter->first);
 				Sequence singleSeq;
@@ -155,7 +160,7 @@ class GSP {
 			return candidateSet;
 		}
 		
-		bool canConnect(const vector<elemType> *frontSeq,const vector<elemType> *backSeq) {
+		bool canConnect(const vector<elemType> *frontSeq, const vector<elemType> *backSeq) {
 			// 先比較長度 不一樣長就不行
 			if (frontSeq->size() != backSeq->size())
 				return false;
@@ -264,12 +269,12 @@ class GSP {
 			cout << endl;
 		}
 		
-		// 將 oneElementMap 和 miningPatternsMap 一起輸出
+		// 將 appCountMap 和 miningPatternsMap 一起輸出
 		void OutputAll() {
 			// 1-frequent
 			cout << "min_support = " << min_support << endl;
 			cout << "1-frequent candidate set" << endl;
-			for(map<elemType, int>::iterator iter = oneElementMap.begin(); iter != oneElementMap.end(); iter ++)
+			for(map<elemType, int>::iterator iter = appCountMap.begin(); iter != appCountMap.end(); iter ++)
 				printf("<%d>:  %d\n", iter->first, iter->second);
 			cout << endl;
 			
@@ -308,6 +313,11 @@ class GSP {
 			}
 		}
 };
+
+/** 目前 ESLaterTree   都沒有用，因為是沒有必要的設計
+ *       ESForwardTree
+ *       ElemStatsTree
+ */
 
 // 往之前用過的查詢
 class ESLaterTree {
@@ -454,7 +464,7 @@ class ESLaterTree {
 			for (vector<elemType>::iterator iter = newSeq.begin(); iter != newSeq.end(); iter++) {
 				cout << *iter << " ";
 			}
-			cout << " > " << length <<endl;
+			cout << " > " << count <<endl;
 			
 			// 輸出 elemStatsMap
 			for (map<elemType, int>::iterator iter = elemStatsMap.begin(); iter != elemStatsMap.end(); iter++) {
@@ -605,7 +615,7 @@ class ESForwardTree {
 };
 
 // 合併以上兩種方法，並實作 prediction funtion
-class ElemStatsTree {
+class ElemStatsTree : public PredictResult {
 	public :
 		ESLaterTree laterTree ;
 		ESForwardTree forwardTree;

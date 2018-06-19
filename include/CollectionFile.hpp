@@ -1,6 +1,8 @@
 #ifndef COLLECTION_FILE_HPP
 #define COLLECTION_FILE_HPP
 
+//#defind COLLECTION_FILE_HPP_debug
+
 #include <dirent.h>
 #include <stdio.h>
 #include <list>
@@ -128,7 +130,9 @@ class CollectionFile {
           line++;
           // 檢查是不是沒有資料了
           if (strstr(getLine,"over")) {
+#ifdef COLLECTION_FILE_HPP_debug
             cout << "fileName:" << fileName << " over data" <<endl;
+#endif
             break;
           }
           if (!thisPoint.getTime(string(getLine))) {

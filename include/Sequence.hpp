@@ -11,12 +11,13 @@ typedef int elemType;
 struct Itemset {
 	vector<elemType> item; // store the single itemset's items
 	int timestamp;         // record current itemsettimestamp
-	Itemset(){
+	Itemset() {
 		timestamp = 0;
 	}
 };
 
 // data sequence.
+// 由舊到新
 struct Sequence {
 	int tid;                 // transation id
 	int num;                 // the number of itemset.

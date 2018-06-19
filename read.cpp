@@ -10,6 +10,7 @@
 #include "include/StringToNumber.hpp"
 #include "include/CollectionFile.hpp"
 #include "include/SequentialPatternsMining/GSP.hpp"
+#include "include/SequentialPatternsMining/GSP_Predict.hpp"
 using namespace std;
 
 int getdir(string dir, vector<string> &files);   // 取得資料夾中檔案的方法
@@ -27,8 +28,9 @@ class Event {
         };
     };
     
-    DateTime *thisDate;
-    DateTime *nextDate;
+		// lastTime "useApp" thisDate nextDate
+    DateTime *thisDate;		// 紀錄APP的時間點
+    DateTime *nextDate;		// 下次紀錄的時間點
     vector<Case> caseVec;
     bool isThisScreenOn;
     bool isNextScreenOn;
@@ -38,6 +40,7 @@ class Event {
     }
 
     // 將重複的 app 刪掉
+		// 因為 Cytus 會有兩個，所以要特別刪掉一個
     bool sortOut() {
       bool dataGood = true;
       for (int i=0; i<int(caseVec.size())-1; i++) {
@@ -470,7 +473,8 @@ class DataMining {
     int EPscreen_turn_off;
     int EPscreen_long_off;
     DateTime intervalTime;
-    vector<int> DMEventPoint;
+    vector<int> trainingDMEventPoint;
+    vector<int> testDMEventPoint;
     vector<string> DMEPtoEvent;
     DataMining() {
       screen_turn_on = string("screen turn on");
@@ -481,18 +485,10 @@ class DataMining {
       intervalTime.hour = 1;
     }
 
-    bool collection(vector<Event> *eventVec, vector<string> *allAppNameVec) {
+		// main function
+    bool mining(vector<Event> *eventVec, vector<string> *allAppNameVec) {
 			// check screen state
-			{
-				bool lastScreen = eventVec->at(0).isNextScreenOn;
-				for (int i=1; i<eventVec->size(); i++) {
-					if (lastScreen != eventVec->at(i).isThisScreenOn) {
-						cout << "(Warning) screen data is NOT good. at (" << i << ") event" <<endl;
-						break;
-					}
-					lastScreen = eventVec->at(i).isNextScreenOn;
-				}
-			}
+			checkScreenState(eventVec);
 			
       // 先將 app 一一列好
       // ----- initial
@@ -508,63 +504,292 @@ class DataMining {
       DMEPtoEvent.push_back(screen_long_off);
       EPscreen_long_off = DMEPtoEvent.size()-1;
 
-      vector<pair<int, int> > screenPattern;  // 主要是將 screen 亮著的區間做間隔
-      getScreenPattern(&screenPattern, eventVec);
-			//screenPattern.push_back(pair<int, int>(0, eventVec->size()-1));
+			// 輸出 point to AppName
+			//for (int i=0; i<DMEPtoEvent.size(); i++) {
+			//	cout << i << "\t:" << DMEPtoEvent[i] <<endl;
+			//}
+			
+			// screenPattern : 主要是將 screen 亮著的區間做間隔
+      vector<pair<int, int> > screenPattern;
+      buildScreenPattern(&screenPattern, eventVec);
 			cout << "Screen on->off interval have (" << screenPattern.size() << ") times" <<endl;
-      //vector<pair<int, int> > usePattern;  // 主要是將 screen 關閉太久後，就當做前後沒有關係
-      //getUserPattern(&usePattern, eventVec);
-
-      // 整理後裝進 DMEventPoint
-      putOnDMEventPoint(&screenPattern, eventVec);
-			cout << "User action have (" << DMEventPoint.size() << ") times" <<endl;
-
+			
+			// 將 screenPattern 用時間分成 training test 兩份
+			// 讓 eventVec 可以直接分成兩個資料
+			DateTime intervalTime;	// 設定 training data 要多久
+			intervalTime.initial();
+			intervalTime.day = 14;	// 2 week
+			// 將資料分類成 training、test
+			buildData(&intervalTime, &screenPattern, eventVec);
+			
 			// remove the same action
-			vector<int>::iterator lastIter = DMEventPoint.begin();
-			vector<int>::iterator thisIter = DMEventPoint.begin();
-			thisIter++;
-			while (thisIter!=DMEventPoint.end()) {
-				if (*lastIter != *thisIter) {
-					// 不一樣的話沒事
-					lastIter++;
-					thisIter++;
-				} else {
-					// 一樣的話要刪掉 thisIter
-					thisIter = DMEventPoint.erase(thisIter);
-				}
-			}
-			cout << "NEW User action have (" << DMEventPoint.size() << ") times" <<endl;
+			removeSameAction();
 			
       // ----- sequential patterns mining
-			//int min_support = DMEventPoint.size()/200; // (0.5%)
-			//int min_support = 2; // (0.5%)
-			int min_support = DMEventPoint.size()/100; // (0.5%)
-      GSP gsp(DMEventPoint, min_support);
+			//int min_support = trainingDMEventPoint.size()/200; // (0.5%)
+			int min_support = 2; // 2
+      GSP gsp(trainingDMEventPoint, min_support);
       gsp.Mining();
 			vector<int> filterVec;
 			filterVec.push_back(EPscreen_turn_on);
 			filterVec.push_back(EPscreen_turn_off);
 			//filterVec.push_back(EPscreen_long_off);
 			gsp.Filter(&filterVec);
-			gsp.OutputAll();
+			//gsp.OutputAll();
 			gsp.OutpurAllTop();
 			
 			// ElemStatsTree 實作機率與統計部分
-			ElemStatsTree rootES;
-			rootES.Build(&gsp);
-			rootES.Output();
+			GSP_Predict gspPredict(&gsp);
 			
+			// test data experiment
+			const int maxBackApp = 9;
+			const int maxPredictApp = 9;
+			int failedTimes;
+			int successTimes[maxPredictApp];
+			// GSP normal Algorithm
+			{
+				// initial
+				failedTimes = 0;
+				for (int i=0; i<maxPredictApp; i++) {
+					successTimes[i] = 0;
+				}
+				
+				// predict
+				for (int i=maxBackApp; i<testDMEventPoint.size()-1; i++) {
+					Sequence shortSeq = buildShortSequence(i, maxBackApp, &testDMEventPoint);
+					
+					// 預測和判斷是否成功
+					PredictResult result = gspPredict.predictResult_normal(&shortSeq, maxPredictApp);
+					int reallyUseApp = testDMEventPoint.at(i+1);
+					for (int j=0; j<maxPredictApp; j++) {
+						if (result.resultPairs.at(j).first == reallyUseApp) {
+							successTimes[j]++;
+							break;
+						} else if (j == maxPredictApp-1) {
+							failedTimes++;
+						}
+					}
+				}
+				
+				// output
+				cout << "GSP normal predict rate: " <<endl;
+				printExperiment(successTimes, failedTimes, maxPredictApp);
+			}
 			
+			// GSP special level Algorithm
+			{
+				// initial
+				const int maxPredictAppforSL = 1;
+				failedTimes = 0;
+				for (int i=0; i<maxPredictAppforSL; i++) {
+					successTimes[i] = 0;
+				}
+				
+				// 建立預測結果表格 (which sequence, level)
+				const int EMPTY = 0;
+				const int PREDICT_FAIL = -1;
+				const int PREDICT_HEAD = 1; // 後面加幾代表第幾層 level
+				int predictLevelMap[testDMEventPoint.size()][maxBackApp];
+				for (int i=0; i<testDMEventPoint.size(); i++) {
+					for (int j=0; j<maxBackApp; j++) {
+						predictLevelMap[i][j] = EMPTY;
+					}
+				}
+				
+				// predict
+				// 建立結果表格
+				for (int i=maxBackApp; i<testDMEventPoint.size()-1; i++) {
+					Sequence shortSeq = buildShortSequence(i, maxBackApp, &testDMEventPoint);
+					int reallyUseApp = testDMEventPoint.at(i+1);
+					
+					// 預測和判斷是否成功
+					for (int level=0; level<maxBackApp; level++) {
+						PredictResult result = gspPredict.predictResult_specialLevel(&shortSeq, level, maxPredictAppforSL);
+						
+						// 檢查確實有結果才繼續，否則跳出換下一個
+						if (result.resultPairs.at(0).first != PredictResult::NO_APP) {
+							if (result.resultPairs.at(0).first == reallyUseApp) {
+								predictLevelMap[i][level] = PREDICT_HEAD + 1;	// 1 : 第幾個才預測到
+							} else {
+								predictLevelMap[i][level] = PREDICT_FAIL;
+							}
+						} else {
+							break;
+						}
+					}
+				}
+				
+				cout << "GSP special level predict rate: " <<endl;
+				// 統計表格 difference level effect
+				// 從 level 0 開始找
+				for (int level=0; level<maxBackApp; level++) {
+					// initial
+					for (int i=0; i<maxPredictApp; i++) {
+						successTimes[i] = 0;
+					}
+					failedTimes = 0;
+					vector<int> catchSeqVec; // 知道有哪些是有搜尋到的內容
+					
+					// 先找自己這層有多少個
+					for (int i=0; i<testDMEventPoint.size(); i++) {
+						if (predictLevelMap[i][level] != EMPTY) {
+							catchSeqVec.push_back(i);
+							if (predictLevelMap[i][level] != PREDICT_FAIL) {
+								successTimes[level]++;
+							} else {
+								failedTimes++;
+							}
+						} else {
+							continue;
+						}
+					}
+					
+					// 都沒有東西就跳出吧
+					if (catchSeqVec.empty()) {
+						break;
+					}
+					
+					// 之後往下搜尋
+					for (int downLevel = level-1; 0<=downLevel; downLevel--) {
+						for (vector<int>::iterator seqHead = catchSeqVec.begin(); 
+								 seqHead != catchSeqVec.end(); seqHead++)
+						{
+							if (predictLevelMap[*seqHead][downLevel] != PREDICT_FAIL) {
+								successTimes[downLevel]++;
+							} else {
+								failedTimes++;
+							}
+						}
+					}
+					
+					// output
+					cout << "----- level: " << level << " total: " << catchSeqVec.size() <<endl;
+					for (int downLevel = level; 0<=downLevel; downLevel--) {
+						cout << "L" << downLevel;
+						cout << " predict rate: " << (double)successTimes[downLevel]/catchSeqVec.size() <<endl;
+					}
+				}
+				cout <<endl;
+			}
 			
-			// 輸出 app
-			/*for (int i=0; i<DMEPtoEvent.size(); i++) {
-				cout << i << "\t:" << DMEPtoEvent[i] <<endl;
-			}*/
+			// LRU
+			{
+				// initial
+				failedTimes = 0;
+				for (int i=0; i<maxPredictApp; i++) {
+					successTimes[i] = 0;
+				}
+				
+				// predict
+				for (int i=maxBackApp; i<testDMEventPoint.size()-1; i++) {
+					int reallyUseApp = testDMEventPoint.at(i+1);
+					for (int j=1; j<maxBackApp+1 && j<maxPredictApp+1; j++) {
+						if (testDMEventPoint.at(i-j) == reallyUseApp) {
+							//cout << "predict:" << testDMEventPoint.at(i-1) << " use:" << testDMEventPoint.at(i+1) << " success" <<endl;
+							successTimes[j-1]++;
+							break;
+						} else if (j == maxBackApp || j == maxPredictApp) {
+							failedTimes++;
+						}
+					}
+				}
+				
+				// output
+				cout << "LRU predict rate: " <<endl;
+				printExperiment(successTimes, failedTimes, maxPredictApp);
+			}
+			
+			// MFU
+			{
+				// initial
+				failedTimes = 0;
+				for (int i=0; i<maxPredictApp; i++) {
+					successTimes[i] = 0;
+				}
+				
+				// 整理 sequence
+				Sequence shortSeq;
+				Itemset tmpItem;
+				tmpItem.item.push_back(30000);
+				shortSeq.itemset.push_back(tmpItem);
+				
+				// predict
+				PredictResult result = gspPredict.predictResult_specialLevel(&shortSeq, 0, maxPredictApp);
+				for (int i=maxBackApp; i<testDMEventPoint.size()-1; i++) {
+					int reallyUseApp = testDMEventPoint.at(i+1);
+					for (int j=0; j<maxPredictApp; j++) {
+						if (result.resultPairs.at(j).first == reallyUseApp) {
+							successTimes[j]++;
+							break;
+						} else if (j == maxPredictApp-1) {
+							failedTimes++;
+						}
+					}
+				}
+				
+				// output
+				cout << "MFU predict rate: " <<endl;
+				printExperiment(successTimes, failedTimes, maxPredictApp);
+			}
+			
     }
 		
-		// 取得 screen 開關 Pattern
-		// 主要是取得 on -> off 也就是亮著的時間間隔
-		void getScreenPattern(vector<pair<int, int> > *screenPattern, vector<Event> *eventVec) {
+		/** 建立 sequence 方便搜尋和預測
+		 *  (bug) 不會比較 seqEnd 有沒有比 maxBackApp 還長，所以可能會往後挖過頭
+		 *  (bug) 也不會比較 seqEnd 有沒有超過 DMEventPoint
+		 */
+		Sequence buildShortSequence(int seqEnd, int maxBackApp, const vector<int> *DMEventPoint) {
+			Sequence shortSeq;
+			// 整理 sequence
+			for (int j=seqEnd-maxBackApp; j<=seqEnd; j++) {
+				Itemset tmpItem;
+				tmpItem.item.push_back(DMEventPoint->at(j));
+				shortSeq.itemset.push_back(tmpItem);
+			}
+			//shortSeq.Output();
+			return shortSeq;
+		}
+		
+		/** 將結果印出
+		 *  successTimes : 成功的次數，可以往後讀 maxPredictApp 個
+		 *  failedTimes : 往回 maxPredictApp 個都沒有命中
+		 *  maxPredictApp : 總共預測幾個
+		 */
+		void printExperiment(int *successTimes, int failedTimes, int maxPredictApp) {
+			// 算全部 totalTimes
+			int totalTimes = failedTimes;
+			for (int i=0; i<maxPredictApp; i++) {
+				totalTimes += successTimes[i];
+			}
+			// print
+			for (int i=0; i<maxPredictApp; i++) {
+				int outputST = 0;
+				for (int j=0; j<i+1; j++) {
+					outputST += successTimes[j];
+				}
+				cout << "predict app number:" << i+1 << " predict rate:" << (double)outputST/totalTimes <<endl;
+			}
+			cout <<endl;
+		}
+			
+		/** 檢查一下螢幕資料是否有問題 
+		 *  有連續的兩個點連接的螢幕資訊不一樣的話，會出輸警告
+		 */
+		void checkScreenState(vector<Event> *eventVec) {
+			bool lastScreen = eventVec->at(0).isNextScreenOn;
+			for (int i=1; i<eventVec->size(); i++) {
+				if (lastScreen != eventVec->at(i).isThisScreenOn) {
+					cout << "(Warning) screen data is NOT good. at (" << i << ") event" <<endl;
+					break;
+				}
+				lastScreen = eventVec->at(i).isNextScreenOn;
+			}
+		}
+		
+		/** 取得 screen 開關 Pattern
+		 *  主要是取得 on -> off 也就是亮著的時間間隔
+		 */
+		void buildScreenPattern(vector<pair<int, int> > *screenPattern, vector<Event> *eventVec) {
       // 看螢幕"暗著"的時間間隔 // mason
       pair<int, int> onePattern = make_pair(0,0);
       int pI = 0;
@@ -596,13 +821,44 @@ class DataMining {
       }
 		}
 		
+		/** 利用螢幕分隔(screenPattern)來切成兩個時間段
+		 *  並將其資料分別裝入 trainingDMEventPoint、testDMEventPoint
+		 *  intervalTime : 要切割多少 training 時間
+		 *  screenPattern : 螢幕亮著的區間
+		 *  eventVec : 使用 APP 流程
+		 */
+		void buildData(DateTime *intervalTime, vector<pair<int, int> > *screenPattern, vector<Event> *eventVec) {
+			vector<pair<int, int> > trainingScnPatn, testScnPatn;
+			int testHead = 0;
+			DateTime *headTime = eventVec->at(screenPattern->at(testHead).first).thisDate;
+			for (testHead = 0; testHead<eventVec->size(); testHead++) { 
+				DateTime *endTime = eventVec->at(screenPattern->at(testHead).first).thisDate;
+				if (*endTime - *headTime > *intervalTime) { // (bug) 一定要小於 trainingIntervalTime.day，沒有寫防呆
+					break;
+				}
+			}
+			// 裝進 trainingScnPatn
+			for (int i=0; i<testHead; i++) {
+				trainingScnPatn.push_back(screenPattern->at(i));
+			}
+			// 裝進 testScnPatn
+			for (int i=testHead; i<screenPattern->size(); i++) {
+				testScnPatn.push_back(screenPattern->at(i));
+			}
+			
+      // 整理後裝進 trainingDMEventPoint (training)、testDMEventPoint (test)
+      buildDMEventPoint(&trainingDMEventPoint, &trainingScnPatn, eventVec);
+      buildDMEventPoint(&testDMEventPoint, &testScnPatn, eventVec);
+			cout << "User training action have (" << trainingDMEventPoint.size() << ") times" <<endl;
+			cout << "User test action have (" << testDMEventPoint.size() << ") times" <<endl;
+		}
 		
     /** 如果有遇到一次發現多的 app 執行的話
      * 就用 "oom_score" 來判斷先後
      * 數字大的前面
-     * 最後都放到 DMEventPoint 之中
+     * 最後都放到 trainingDMEventPoint 之中
      */
-    void putOnDMEventPoint(vector<pair<int, int> > *usePattern, vector<Event> *eventVec) {
+    void buildDMEventPoint(vector<int> *trainingDMEventPoint, vector<pair<int, int> > *usePattern, vector<Event> *eventVec) {
       // 用 usePattern 來取出
       for (int i=0; i<usePattern->size(); i++) {
         pair<int, int> useInterval = usePattern->at(i);
@@ -612,7 +868,7 @@ class DataMining {
 				// 3. check screen, if turn off, record it
 				
 				// ----- 1. check screen, if turn on, record it
-				//DMEventPoint.push_back(EPscreen_turn_on);
+				//trainingDMEventPoint->push_back(EPscreen_turn_on);
 				
         // ----- 2. record app
         for (int EP=useInterval.first; EP<=useInterval.second; EP++) { // PS: EP = EventPoint
@@ -641,7 +897,7 @@ class DataMining {
               if (big_oom_score<0 || big_app_num<0 || big_app_name<0) {
                 cout << "bad" <<endl;
               }
-              DMEventPoint.push_back(big_app_name);
+              trainingDMEventPoint->push_back(big_app_name);
               //cout << big_oom_score << " : " << big_app_name;
               //cout << "\t" << caseVec->at(j).nextApp->oom_score << " : " << caseVec->at(j).nextApp->namePoint;
               //cout << endl;
@@ -651,16 +907,55 @@ class DataMining {
         }
 				
 				// ----- 3. check screen, if turn off, record it
-				//DMEventPoint.push_back(EPscreen_turn_off);
+				//trainingDMEventPoint->push_back(EPscreen_turn_off);
       }
     }
+		
+		/** 將 training、test 中連續一樣的資料刪掉
+		 *  以免後面出現使用連續兩個一樣的 APP
+		 */
+		void removeSameAction() {
+			// training
+			vector<int>::iterator lastIter = trainingDMEventPoint.begin();
+			vector<int>::iterator thisIter = trainingDMEventPoint.begin();
+			thisIter++;
+			while (thisIter!=trainingDMEventPoint.end()) {
+				if (*lastIter != *thisIter) {
+					// 不一樣的話沒事
+					lastIter++;
+					thisIter++;
+				} else {
+					// 一樣的話要刪掉 thisIter
+					thisIter = trainingDMEventPoint.erase(thisIter);
+				}
+			}
+			
+			// test
+			lastIter = testDMEventPoint.begin();
+			thisIter = testDMEventPoint.begin();
+			thisIter++;
+			while (thisIter!=testDMEventPoint.end()) {
+				if (*lastIter != *thisIter) {
+					// 不一樣的話沒事
+					lastIter++;
+					thisIter++;
+				} else {
+					// 一樣的話要刪掉 thisIter
+					thisIter = testDMEventPoint.erase(thisIter);
+				}
+			}
+			
+			// output
+			cout << "NEW User training action have (" << trainingDMEventPoint.size() << ") times" <<endl;
+			cout << "NEW User test action have (" << testDMEventPoint.size() << ") times" <<endl;
+		}
 		
 		/** (bug)
 		 * 目前發現會不小心將螢幕暗著的時候也記錄進去
 		 * 所以先捨棄不用
-		 * 和下面的 putOnDMEventPoint 一樣不用
+		 * 和下面的 buildtrainingDMEventPoint 一樣不用
 		 */
-    bool getUserPattern(vector<pair<int, int> > *usePattern, vector<Event> *eventVec) {
+    /*bool getUserPattern(vector<pair<int, int> > *usePattern, vector<Event> *eventVec) {
       // 看螢幕"暗著"的時間間隔 // mason
       cout << "    ========= Interval Time > " << intervalTime.hour << " hour ==========" <<endl;
       cout << "              start                     end     interval" <<endl;
@@ -704,25 +999,25 @@ class DataMining {
         else if (*(screenChgOnShut->thisDate) - *(screenChgOffShut->thisDate) > intervalTime) {
           usePattern->push_back(onePattern);
           onePattern.first = pI;
-          /*screenChgOffShut->thisDate->output();
-          cout << "\t";
-          screenChgOnShut->thisDate->output();
-          cout << "\t";
-          (*(screenChgOnShut->thisDate) - *(screenChgOffShut->thisDate)).output();
-          cout << endl;*/
+          //screenChgOffShut->thisDate->output();
+          //cout << "\t";
+          //screenChgOnShut->thisDate->output();
+          //cout << "\t";
+          //(*(screenChgOnShut->thisDate) - *(screenChgOffShut->thisDate)).output();
+          //cout << endl;
         }
       }
       return true;
-    }
+    }*/
 
     /** 如果有遇到一次發現多的 app 執行的話
      * 就用 "oom_score" 來判斷先後
      * 數字大的前面
-     * 最後都放到 DMEventPoint 之中
+     * 最後都放到 trainingDMEventPoint 之中
 		 * (bug) 和 getUserPattern 一樣，對螢幕亮暗的紀錄不太好
 		 * 所以也先暫時不用
      */
-    /*void putOnDMEventPoint(vector<pair<int, int> > *usePattern, vector<Event> *eventVec) {
+    /*void buildDMEventPoint(vector<pair<int, int> > *usePattern, vector<Event> *eventVec) {
       // 用 usePattern 來取出
       for (int i=0; i<usePattern->size(); i++) {
         pair<int, int> useInterval = usePattern->at(i);
@@ -736,7 +1031,7 @@ class DataMining {
           Event* oneshut = &(eventVec->at(EP));
           // ----- 1. check screen, if turn on, record it
           if (!oneshut->isThisScreenOn && oneshut->isNextScreenOn) {
-            DMEventPoint.push_back(EPscreen_turn_on);
+            trainingDMEventPoint.push_back(EPscreen_turn_on);
           }
 
           // ----- 2. record app
@@ -764,7 +1059,7 @@ class DataMining {
               if (big_oom_score<0 || big_app_num<0 || big_app_name<0) {
                 cout << "bad" <<endl;
               }
-              DMEventPoint.push_back(big_app_name);
+              trainingDMEventPoint.push_back(big_app_name);
               //cout << big_oom_score << " : " << big_app_name;
               //cout << "\t" << caseVec->at(j).nextApp->oom_score << " : " << caseVec->at(j).nextApp->namePoint;
               //cout << endl;
@@ -774,18 +1069,17 @@ class DataMining {
           
           // ----- 3. check screen, if turn off, record it
           if (oneshut->isThisScreenOn && !oneshut->isNextScreenOn) {
-            DMEventPoint.push_back(EPscreen_turn_off);
+            trainingDMEventPoint.push_back(EPscreen_turn_off);
           }
         }
         // 接下來是很久時間都沒打開螢幕
-        DMEventPoint.push_back(EPscreen_long_off);
+        trainingDMEventPoint.push_back(EPscreen_long_off);
       }
     }*/
 };
 
 int main(int argc, char** argv) {
   // 資料夾路徑(絕對位址or相對位址) 目前用現在的位置
-  
   string dir;
   if (argc == 2) {
     dir = string(argv[1]);
@@ -833,11 +1127,10 @@ int main(int argc, char** argv) {
   // 輸出數量
   cout << "收集了多少" << collecFileVec.size() << "檔案" <<endl;
   
-  // 將檔案給 collecAllData 整理成可讓 netCDFoutput 讀的資料
+  // 將檔案給 collecAllData 整理成可讓 dataMining 讀的資料
   collecAllData.collection(&collecFileVec);
-  // 將 collecAllData 中的 allEventVec appNameVec 給 netCDFoutput 去整理
-  //netCDFoutput.collection(&collecAllData.allEventVec, &collecAllData.allAppNameVec);
-  dataMining.collection(&collecAllData.allEventVec, &collecAllData.allAppNameVec);
+  // 將 collecAllData 中的 allEventVec appNameVec 給 dataMining 去整理
+  dataMining.mining(&collecAllData.allEventVec, &collecAllData.allAppNameVec);
   
   cout << "  over" <<endl;
   return 0;
