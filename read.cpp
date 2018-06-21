@@ -6,6 +6,13 @@
 #include <iostream>
 //#include <netcdfcpp.h>
 
+//#define EXPERIMENT_debug_addOom_adjStat
+
+//#define EXPERIMENT_debug_oomAdj_less_than_0
+//#define EXPERIMENT_debug_oomAdj_rate_onEachApp
+#define EXPERIMENT_debug_oomAdj_statistics
+//#define EXPERIMENT_debug_IntervalTime
+
 #include "include/DateTime.hpp"
 #include "include/StringToNumber.hpp"
 #include "include/CollectionFile.hpp"
@@ -39,16 +46,17 @@ class Event {
       isNextScreenOn = false;
     }
 
-    // 將重複的 app 刪掉
-		// 因為 Cytus 會有兩個，所以要特別刪掉一個
+    /** 將重複的 app 刪掉
+		 *  if appear : 1st 保留 oom_score 比較小的
+		 *              2nd 保留 appPid 比較小的
+		 *  出發點 : 因為 Cytus 會有兩個，所以要特別刪掉一個
+		 */
     bool sortOut() {
       bool dataGood = true;
       for (int i=0; i<int(caseVec.size())-1; i++) {
         int namePoint = caseVec.at(i).namePoint;
         for (int j=i+1; j<caseVec.size(); j++) {
-          // 找到同樣 name 的 app
-          // 保留 oom_score 比較小的
-          // oom_score 一樣的話 就保留 appPid 比較小的
+          // if appear ......
           if (namePoint == caseVec.at(j).namePoint) {
             /*if (dataGood) {
               cout << "-------" << caseVec.size() <<endl;
@@ -102,7 +110,7 @@ class CollectionAllData {
       public :
         string appName;
         int findTimes;
-        int findRate;
+        double findRate;
         int oom_adjStat[41]; // 從-20~20 (不過目前只有-17~16)
         
         AppDetail(string appName) {
@@ -120,10 +128,14 @@ class CollectionAllData {
             return true;
           } else if ( -20<=oom_adj && oom_adj<=20 ) {
             oom_adjStat[oom_adj+20]++;
+#ifdef EXPERIMENT_debug_addOom_adjStat
             cout << "oom_adj out of value : " << oom_adj << endl;
+#endif
             return true;
           } else {
+#ifdef EXPERIMENT_debug_addOom_adjStat
             cout << "oom_adj out of value : " << oom_adj << endl;
+#endif
             return false;
           }
         };
@@ -141,112 +153,109 @@ class CollectionAllData {
     vector<string> allAppNameVec;       // 用 collecFileVec 的資料收集所有的 app's name
     vector<Point> allPatternVec;        // 所有 pattern
     vector<AppDetail> allAppDetailVec;  // 所有 app 的詳細資料
-    /**
-     * allEventVec 主要是放入了 發生過的事件 並依序放好
-     * 其中的 Event 是使用者剛好切換 APP 或是開關螢幕也會知道
+    /** allEventVec 主要是放入了 發生過的事件 並依序放好
+     *  其中的 Event 是使用者剛好切換 APP 或是開關螢幕也會知道
      */
-    vector<Event> allEventVec;          // 先都裝到這裡 allEventVec
+    vector<Event> allEventVec;
     
-    CollectionAllData() {
-    };
+    CollectionAllData() {};
     
     void collection(vector<CollectionFile> *collecFileVec) {
-      // 收集所有的 app's name 用來之後編號
+      //{ 收集所有的 app's name 用來之後編號
       for (int i=0; i<collecFileVec->size(); i++) {
         for(list<Point>::iterator oneShot = (*collecFileVec)[i].pattern.begin();
             oneShot!=(*collecFileVec)[i].pattern.end(); oneShot++) 
         {
           addonePoint(*oneShot, &(*collecFileVec)[i].appNameVec);
         }
-      }
-      // 日期 開始與結束
+      }//}
+			
+      //{ beginDate, endDate 設定
       beginDate = allPatternVec.front().date;
-      endDate = allPatternVec.back().date;
+      endDate = allPatternVec.back().date;//}
       
-      // 從 allPatternVec 中統計 app 的詳細資料
+      //{ 從 allPatternVec 中統計 app 的出現次數和 each oom_adj 的次數
       for (int i=0; i<allAppNameVec.size(); i++) {
-        // 新增 AppDetail 並放入名字
-        AppDetail newAppDetail(allAppNameVec[i]);
+        AppDetail newAppDetail(allAppNameVec[i]); // 放入名字
+				// 找所有 allPatternVec::app 中 兩者 point 一樣的 (表示有找到)
         for (int j=0; j<allPatternVec.size(); j++) {
-          // 先找此 oneShot 有沒有此 App
           for (int k=0; k<allPatternVec[j].appNum; k++) {
-            // point 一樣的話代表有找到，並記錄相關資料
             if (i==allPatternVec[j].app[k].namePoint) {
-              // 紀錄找到了幾次 AND oom_adj 數量
               newAppDetail.findTimes++;
               newAppDetail.addOom_adjStat(allPatternVec[j].app[k].oom_adj);
               break;
             }
           }
         }
-        double findRate = ((double)newAppDetail.findTimes)/allPatternVec.size();
-        newAppDetail.findRate = static_cast<int>(100*findRate);
-        
-        // 最後放入 allAppDetailVec
-        allAppDetailVec.push_back(newAppDetail);
-      }
-      
-      // 整理 App 的詳細資料
-      makeAppDetail();
-    }
-
-    // 主要將資料裝到 allEventVec
-    void makeAppDetail() {
-      // 有些不需要的直接跳過的 app
-      bool *notNeedApp = new bool[allAppDetailVec.size()];
-      // 檢查
+        newAppDetail.findRate = ((double)newAppDetail.findTimes)/allPatternVec.size();
+        allAppDetailVec.push_back(newAppDetail); // 放入 allAppDetailVec
+      }//}
+			
+      /** 有些要跳過的 app & 不需要的直接跳過的 app
+			 *  不需要的有 : oom_adj 沒出現過 0，表示沒有在前景出現過
+			 *               為了收集資料的 app
+			 */ //{
+      bool unneededAppArray[allAppDetailVec.size()];
       for (int i=0; i<allAppDetailVec.size(); i++) {
-        // notNeedApp 初始化
-        notNeedApp[i] = false;
-        // oom_adj 都沒有等於0的資料
-        // 表示沒有在前景出現過
+        // initial
+        unneededAppArray[i] = false;
+				
+        // oom_adj 沒出現過 0
         if (allAppDetailVec[i].getOom_adjStat(0)==0) {
-          // 目前是直接去除
-          notNeedApp[i] = true;
+          unneededAppArray[i] = true;
           continue;
         }
-        // 過慮自己的收集 App
+				
+        // 自己的收集 App
         int temp = allAppDetailVec[i].appName.find("com.mason.memoryinfo:Record",0);
         if(0<=temp) {
-          notNeedApp[i] = true;
+          unneededAppArray[i] = true;
           continue;
         }
         temp = allAppDetailVec[i].appName.find("com.mason.memoryinfo:Recover",0);
         if(0<=temp) {
-          notNeedApp[i] = true;
+          unneededAppArray[i] = true;
           continue;
         }
         temp = allAppDetailVec[i].appName.find("com.mason.memoryinfo:remote",0);
         if(0<=temp) {
-          notNeedApp[i] = true;
+          unneededAppArray[i] = true;
           continue;
         }
         temp = allAppDetailVec[i].appName.find("com.mason.memoryinfo",0);
         if(0<=temp) {
-          notNeedApp[i] = true;
+          unneededAppArray[i] = true;
           continue;
         }
-      }
-      
-      // 看有沒有0以下的數值
-      /*{
-        bool isHave = false;
-        for (int i=0; i<allAppDetailVec.size(); i++) {
-          for (int j=-20; j<0; j++) {
-            if (allAppDetailVec[i].getOom_adjStat(j)!=0) {
-              if (!isHave) {
-                cout << "    =============== oom_adj <0 ================" <<endl;
-                cout << "   i  oom_adj  Times  Name " <<endl;
-                isHave = true;
-              }
-              printf("%4d %8d  %5d  %s\n", i, j, allAppDetailVec[i].getOom_adjStat(j), allAppDetailVec[i].appName.c_str());
-            }
-          }
-        }
-      }*/
-      
-      // 找 oom_adj 零以上的資訊
-      /*{
+      }//}
+			
+      // 看 oom_adj 有沒有 0 以下的數值
+#ifdef EXPERIMENT_debug_oomAdj_less_than_0
+			bool isHave = false;
+			for (int i=0; i<allAppDetailVec.size(); i++) {
+				for (int j=-20; j<0; j++) {
+					if (allAppDetailVec[i].getOom_adjStat(j)!=0) {
+						if (!isHave) {
+							cout << "    =============== oom_adj <0 ================" <<endl;
+							cout << "   i  oom_adj  Times  Name " <<endl;
+							isHave = true;
+						}
+						printf("%4d %8d  %5d  %s\n", i, j, allAppDetailVec[i].getOom_adjStat(j), allAppDetailVec[i].appName.c_str());
+					}
+				}
+			}
+#endif
+			
+			/**  顯示 each app, oom_adj 零以上的資訊
+			 *   print : i findRate(%)  0   1   2   3   4   5   6   7   8   9  10  11  12  13  14  15  16 (%) App's name
+			 *           0|        49|  0|   |   |   |  1|   |  0| 11|   | 29|   | 41|   |   |   | 18|   |---|android.process.media
+			 *   i : 第幾個 app
+			 *   findRate : 全部 pattern 出現過幾次
+			 *   0~16 : oom_adj 的比例 (佔自己出現過的總比例)
+			 *   app name
+			 */
+#ifdef EXPERIMENT_debug_oomAdj_rate_onEachApp
+      {
         cout << "    ============== 0 <= oom_adj ==============" <<endl;
         printf("  i findRate(%%)");
         for (int j=0; j<=16; j++) {
@@ -256,18 +265,13 @@ class CollectionAllData {
         
         // 主要輸出 app Detail 前面會先有過濾的動作，可以只看到想看到的訊息
         for (int i=0; i<allAppDetailVec.size(); i++) {
-          // 先看看是不是要跳過的
-          if (notNeedApp[i]) {
-            continue;
-          }
+          if (unneededAppArray[i])  continue; // 略過不需要的 app
           
-          // 看名字中有沒有 ":"
-          int temp = allAppDetailVec[i].appName.find(":", 0);
-          if (temp<0) {
-            continue;
-          }
+          //{ 用來只找特定的 app
+          //int temp = allAppDetailVec[i].appName.find(":", 0); // 看名字中有沒有 ":"
+          //if (temp<0)  continue;//}
           
-          printf("%3d|       %3d|", i, allAppDetailVec[i].findRate);
+          printf("%3d|      %4.0f|", i, allAppDetailVec[i].findRate*100);
           for (int j=0; j<=16; j++) {
             if (allAppDetailVec[i].getOom_adjStat(j)==0) {
               printf("   |");
@@ -276,14 +280,56 @@ class CollectionAllData {
             
             double oom_adjRate = ((double)allAppDetailVec[i].getOom_adjStat(j))/allAppDetailVec[i].findTimes;
             printf("%3.0lf|", 100*oom_adjRate);
-            //if (j==3 && allAppDetailVec[i].getOom_adjStat(j)!=0) {
-            //  printf("%3d%4d%%", i, allAppDetailVec[i].findRate);
-            //  cout << " : " << allAppDetailVec[i].appName <<endl;
-            //}
+            if (j==3 && allAppDetailVec[i].getOom_adjStat(j)!=0) {
+              printf("%3d%4f%%", i, allAppDetailVec[i].findRate);
+              cout << " : " << allAppDetailVec[i].appName <<endl;
+            }
           }
-          cout << "   |" << allAppDetailVec[i].appName <<endl;
+          cout << "---|" << allAppDetailVec[i].appName <<endl;
         }
-      }*/
+      }
+#endif
+			
+      // 整理成 allEventVec
+      makeAllEventVec(unneededAppArray);
+			
+			// 觀察間隔時間 超過此時間(maxIntervalTime) 將會顯示
+#ifdef EXPERIMENT_debug_IntervalTime
+			DateTime maxIntervalTime;
+			maxIntervalTime.initial();
+			maxIntervalTime.minute = 5;
+			int maxIntervalTimeNum = 0;
+			for (int i=0; i<allEventVec.size(); i++) {
+				DateTime intervalTime = *allEventVec[i].nextDate - *allEventVec[i].thisDate;
+				if (intervalTime>maxIntervalTime) {
+					// 有必要在輸出
+					if (maxIntervalTimeNum == 0) {
+						cout << "    ============== Interval Time ==============" <<endl;
+						cout << "Interval Time over ";
+						maxIntervalTime.output();
+						cout << endl;
+						cout << "  #:    i   interval time  this time              next time           screen state             " <<endl;
+					}
+					printf("%3d:", ++maxIntervalTimeNum);
+					printf("%5d :   ", i);
+					intervalTime.output();
+					printf("     ");
+					allEventVec[i].thisDate->output();
+					printf(" -> ");
+					allEventVec[i].nextDate->output();
+					
+					//printf(" screen state : ");
+					printf(" %s -> " ,allEventVec[i].isThisScreenOn ? " on":"off");
+					printf(" %s" ,allEventVec[i].isNextScreenOn ? " on":"off");
+					
+					printf("\n");
+				}
+			}
+#endif
+    }
+
+    // 主要將資料裝到 allEventVec
+    void makeAllEventVec(bool *unneededAppArray) {
       
       // 將 allPatternVec 整理後裝到這裡 allEventVec
       // 查看 oom_adj 發生改變的狀況 allPatternVec
@@ -292,7 +338,7 @@ class CollectionAllData {
         Event thisEvent;
         
         bool isChange = false;
-        bool isOom_adjChToZero = false;
+        bool isOom_adjCgToZero = false;
         
         Point::App *thisApp = allPatternVec[i].app;
         int thisAppNum = allPatternVec[i].appNum;
@@ -301,7 +347,7 @@ class CollectionAllData {
         bool isNextAppMatch[nextAppNum];    // 看是不是所有的下一個App都有對應到
         for (int j=0; j<nextAppNum; j++) {
           // 順便過濾
-          if (notNeedApp[nextApp[j].namePoint]) {
+          if (unneededAppArray[nextApp[j].namePoint]) {
             isNextAppMatch[j] = true;
           } else {
             isNextAppMatch[j] = false;
@@ -310,7 +356,7 @@ class CollectionAllData {
         // 從這一個往下連接，一一找一樣的 App
         for (int j=0; j<thisAppNum; j++) {
           // 過濾一些不需要檢查的 app
-          if (notNeedApp[thisApp[j].namePoint]) {
+          if (unneededAppArray[thisApp[j].namePoint]) {
             continue;
           }
           
@@ -327,7 +373,7 @@ class CollectionAllData {
               if (thisApp[j].oom_adj != nextApp[k].oom_adj) {
                 // 檢查 oom_adj 下一刻變0的狀況
                 if (nextApp[k].oom_adj == 0) {
-                  isOom_adjChToZero = true;
+                  isOom_adjCgToZero = true;
                   // 收集此case
                   Event::Case thisCase;
                   thisCase.namePoint = thisApp[j].namePoint;
@@ -368,7 +414,7 @@ class CollectionAllData {
         // 看有沒有螢幕開關，但沒有其他變化
         bool isScreenChange = (allPatternVec[i].screen != allPatternVec[i+1].screen);
         // 看 oom_adj 有沒有變成0 或是有新開的APP 以及螢幕是否有改變
-        if (isOom_adjChToZero || isCreatNewApp || isScreenChange) {
+        if (isOom_adjCgToZero || isCreatNewApp || isScreenChange) {
           // 都有的話將資料寫入
           thisEvent.thisDate = &allPatternVec[i].date;
           thisEvent.nextDate = &allPatternVec[i+1].date;
@@ -378,67 +424,33 @@ class CollectionAllData {
         }
       }
 
-      // allEventVec 中的 app 可能出現重複的 app (收集時就有問題)
-      {
-        for (int i=0; i<allEventVec.size(); i++) {
-          allEventVec.at(i).sortOut();
-        }
-      }
+      //{ allEventVec 中的 app 可能出現重複的 app (收集時就有問題)
+			for (int i=0; i<allEventVec.size(); i++) {
+				allEventVec.at(i).sortOut();
+			}//}
       
-      // 輸出 oom_adj 變化
-      {
-        cout << "    ================= oom_adj =================" <<endl;
-        cout << "Change Times : " << changeTimes <<endl;
-        cout << "oom_adj change(creat) to zero times : " << allEventVec.size() <<endl;
-        
-        cout << "oom_adj change detail : " <<endl;
-        cout << "   No    1    2    3    4    5    6    7    8  other" <<endl;
-        int chToZero[10] = {0};
-        for (int i=0; i<allEventVec.size(); i++) {
-          if (allEventVec[i].caseVec.size()<9)
-            chToZero[allEventVec[i].caseVec.size()]++;
-          else
-            chToZero[9]++;
-        }
-        for (int i=0; i<10; i++) {
-          printf("%5d", chToZero[i]);
-        }
-        printf("\n");
-      }
-      // 觀察間隔時間 超過此時間(maxIntervalTime) 將會顯示
-      /*{
-        DateTime maxIntervalTime;
-        maxIntervalTime.initial();
-        maxIntervalTime.minute = 5;
-        int maxIntervalTimeNum = 0;
-        for (int i=0; i<allEventVec.size(); i++) {
-          DateTime intervalTime = *allEventVec[i].nextDate - *allEventVec[i].thisDate;
-          if (intervalTime>maxIntervalTime) {
-            // 有必要在輸出
-            if (maxIntervalTimeNum == 0) {
-              cout << "    ============== Interval Time ==============" <<endl;
-              cout << "Interval Time over ";
-              maxIntervalTime.output();
-              cout << endl;
-              cout << "  #:    i   interval time  this time              next time           screen state             " <<endl;
-            }
-            printf("%3d:", ++maxIntervalTimeNum);
-            printf("%5d :   ", i);
-            intervalTime.output();
-            printf("     ");
-            allEventVec[i].thisDate->output();
-            printf(" -> ");
-            allEventVec[i].nextDate->output();
-            
-            //printf(" screen state : ");
-            printf(" %s -> " ,allEventVec[i].isThisScreenOn ? " on":"off");
-            printf(" %s" ,allEventVec[i].isNextScreenOn ? " on":"off");
-            
-            printf("\n");
-          }
-        }
-      }*/
-    }
+      // 輸出 each oom_adj 統計
+#ifdef EXPERIMENT_debug_oomAdj_statistics
+			cout << "    ================= oom_adj =================" <<endl;
+			cout << "Change Times : " << changeTimes <<endl;
+			cout << "oom_adj change(creat) to zero times : " << allEventVec.size() <<endl;
+			
+			cout << "oom_adj change detail : " <<endl;
+			cout << "   No    1    2    3    4    5    6    7    8  other" <<endl;
+			int chToZero[10] = {0};
+			for (int i=0; i<allEventVec.size(); i++) {
+				if (allEventVec[i].caseVec.size()<9)
+					chToZero[allEventVec[i].caseVec.size()]++;
+				else
+					chToZero[9]++;
+			}
+			for (int i=0; i<10; i++) {
+				printf("%5d", chToZero[i]);
+			}
+			cout<<endl;
+#endif
+			
+		}
     
     void addonePoint(Point oneShot, const vector<string> *oneAppNameVec) {
       for (int i=0; i<oneShot.appNum; i++) {
@@ -505,9 +517,8 @@ class DataMining {
       EPscreen_long_off = DMEPtoEvent.size()-1;
 
 			// 輸出 point to AppName
-			//for (int i=0; i<DMEPtoEvent.size(); i++) {
+			//for (int i=0; i<DMEPtoEvent.size(); i++)
 			//	cout << i << "\t:" << DMEPtoEvent[i] <<endl;
-			//}
 			
 			// screenPattern : 主要是將 screen 亮著的區間做間隔
       vector<pair<int, int> > screenPattern;
@@ -527,7 +538,7 @@ class DataMining {
 			
       // ----- sequential patterns mining
 			//int min_support = trainingDMEventPoint.size()/200; // (0.5%)
-			int min_support = 2; // 2
+			int min_support = 2;
       GSP gsp(trainingDMEventPoint, min_support);
       gsp.Mining();
 			vector<int> filterVec;
@@ -536,7 +547,7 @@ class DataMining {
 			//filterVec.push_back(EPscreen_long_off);
 			gsp.Filter(&filterVec);
 			//gsp.OutputAll();
-			gsp.OutpurAllTop();
+			//gsp.OutpurAllTop();
 			
 			// ElemStatsTree 實作機率與統計部分
 			GSP_Predict gspPredict(&gsp);
@@ -588,7 +599,7 @@ class DataMining {
 				// 建立預測結果表格 (which sequence, level)
 				const int EMPTY = 0;
 				const int PREDICT_FAIL = -1;
-				const int PREDICT_HEAD = 1; // 後面加幾代表第幾層 level
+				const int PREDICT_HEAD = 1; // 後面加幾代表第幾個才預測到
 				int predictLevelMap[testDMEventPoint.size()][maxBackApp];
 				for (int i=0; i<testDMEventPoint.size(); i++) {
 					for (int j=0; j<maxBackApp; j++) {
@@ -1080,13 +1091,8 @@ class DataMining {
 
 int main(int argc, char** argv) {
   // 資料夾路徑(絕對位址or相對位址) 目前用現在的位置
-  string dir;
-  if (argc == 2) {
-    dir = string(argv[1]);
-  } else {
-    dir = string(".");
-  }
-  
+  string dir = (argc == 2) ? string(argv[1]):string(".");
+	
   vector<string> files;
   vector<CollectionFile> collecFileVec; // 所有檔案的 vector
   CollectionAllData collecAllData;      // 整理所有資料

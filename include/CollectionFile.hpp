@@ -1,7 +1,7 @@
 #ifndef COLLECTION_FILE_HPP
 #define COLLECTION_FILE_HPP
 
-//#defind COLLECTION_FILE_HPP_debug
+//#define COLLECTION_FILE_HPP_debug
 
 #include <dirent.h>
 #include <stdio.h>
@@ -12,8 +12,6 @@
 
 #include "DateTime.hpp"
 #include "StringToNumber.hpp"
-
-//#define NEW
 
 using namespace std;
 
@@ -33,20 +31,21 @@ class Point {
      */
     class App {
       public :
+				const static int NULL_DATA = -10000; // 下面參數 6 個沒東西的話是 NULL_DATA
         int namePoint;
         int pid;
         int totalPss;
-        int oom_score;
-        int ground;   // ground 是 -1 的話代表沒有資料
-        int oom_adj;  // oom_adj 是 -10000 的話代表沒有資料
+        int oom_score; // oom_score 是 NULL_DATA 的話代表沒有資料
+        int ground;    // ground 是 NULL_DATA 的話代表沒有資料
+        int oom_adj;   // oom_adj 是 NULL_DATA 的話代表沒有資料
         
         App() {
-          namePoint = -1;
-          pid = -1;
-          totalPss = -1;
-          oom_score = -10000;
-          ground = -1;
-          oom_adj = -10000;
+          namePoint = NULL_DATA;
+          pid = NULL_DATA;
+          totalPss = NULL_DATA;
+          oom_score = NULL_DATA;
+          ground = NULL_DATA;
+          oom_adj = NULL_DATA;
         }
         
         void output() {
@@ -77,8 +76,9 @@ class Point {
       return date.setAllDateTime(dateTime);
     }
 };
+
 class CollectionFile {
-  // 一個檔案裡的所有資料 之後會用 CollectionAllData 在整個整合起來
+  // 一個檔案裡的所有資料 之後會用 CollectionAllData 再整個整合起來
   public :
     string phoneID;
     string fileName;
@@ -88,22 +88,20 @@ class CollectionFile {
     
     // 開啟檔案，並開始讀檔
     bool openFileAndRead() {
-      // 開檔部分
+      //{ 開檔部分
       FILE *file;
       file = fopen(fileName.c_str(),"r"); // "r" 讀檔而已
       if(file == NULL) {
         cout << "open \"" << fileName << "\" File fail" << endl ;
         return false;
-      }
+			}//}
       
+			//{ initial
       int line=0;
-      //int getLineSize = 4096;
-      //int getLineSize = 65536;
-      int getLineSize = 262144;
-      char getLine[getLineSize];
+      int getLineSize = 4096;
+			char getLine[getLineSize]; //}
       
-      // 取得 phoneID 以及讀到 "----------" 的話就先往下
-      // phoneID:fb5e43235974561d
+      //{ 取得 phoneID 以及讀到 "----------" 的話就先往下 (ex: phoneID:fb5e43235974561d)
       while (true) {
         if (fgets(getLine, getLineSize, file) != NULL) {  // 讀一行
           line++;
@@ -115,17 +113,26 @@ class CollectionFile {
             phoneID = string(temp+8);
           }
         } else {
+					cout << "(error) CollectionFile::openFileAndRead(): No read the start line " <<endl;
           fclose(file);
           return false;
         }
-      }
+			}//}
       
+			//{ 順著存每一個 Point
       Point lastPoint;
-      while (true) { // get Point loop
+      while (true) {
+			  //{ initial
         Point thisPoint;
         bool isBigScan;
-        // 接下來是固定格式 1.時間 2.ProcessRecord 3.procNum 4.AppData
-        // 讀取 時間 2018-02-24_00.49.27
+        bool appDataGood = true; //}
+				
+        /** 接下來是固定格式
+				 *  1.時間
+				 *  2.ProcessRecord : (a)Big or Small (b)procNum (c)AppData
+				 *  3.sensor data
+				 */
+        //{ ----- 1. 時間 (ex: 2018-02-24_00.49.27)
         if (fgets(getLine, getLineSize, file) != NULL) {
           line++;
           // 檢查是不是沒有資料了
@@ -141,9 +148,10 @@ class CollectionFile {
           }
         } else {
           break;
-        }
+        }//}
         
-        // 讀取 什麼類型的搜尋 ProcessRecord:Big or Small
+				//  ----- 2. ProcessRecord
+        //{ === 2(a)Big or Small (ex: ProcessRecord:Big or ProcessRecord:Small)
         if (fgets(getLine, getLineSize, file) != NULL) {
           line++;
           // 檢查類型 "Big" or "Small"
@@ -157,9 +165,8 @@ class CollectionFile {
           }
         } else {
           break;
-        }
-        
-        // 讀取 APP 數量 procNum:19
+        }//}
+        //{ === 2(b)procNum 接下來紀錄 APP 的數量 (es: procNum:19)
         if (fgets(getLine, getLineSize, file) != NULL) {
           line++;
           string tempStr(strstr(getLine,"procNum:"));
@@ -172,23 +179,22 @@ class CollectionFile {
           }
         } else {
           break;
-        }
-        
-        bool appDataGood = true;
+        }//}
+        //{ === 2(c)AppData 讀取 each App 並且會依照 Big or Small 有不同的處理方式
         thisPoint.app = new Point::App[thisPoint.appNum];
-        // 讀取 APP 詳細資料 並且會依照 Big or Small 有不同的處理方式
         for (int getAppNum=0; getAppNum<thisPoint.appNum; getAppNum++) {
           if (fgets(getLine, getLineSize, file) != NULL) {
             line++;
             Point::App tempApp;
             int index = 0;
-            // Big collection
-            // name pid 要從中取出來
+						//{ == Big or Small collection
+            // Big collection : name pid 要從中取出來
+						// Small collection : name pid 從是上一個取 (lastPoint)
             if (isBigScan) {
-              // 取得 name
+              //{ -- get name
               string appName = subCharArray(getLine, getLineSize, '|', index++);
               if (appName.size()!=0) {
-                // 判斷 appName 在 appNameVec 中是第幾個 最後給 tempApp.namePoint
+                // 判斷 appName 在 appNameVec 中是第幾個並給 tempApp.namePoint
                 int appNamePoint = 0;
                 bool isFindName = false;
                 for (int i=0; i < appNameVec.size(); i++) {
@@ -200,7 +206,7 @@ class CollectionFile {
                   }
                 }
                 tempApp.namePoint = appNamePoint;
-                // 沒有的話 往後面加一個
+                // 沒有的話新增一個
                 if (!isFindName) {
                   appNameVec.push_back(appName);
                 }
@@ -208,10 +214,9 @@ class CollectionFile {
                 cout << "(error) CollectionFile::openFileAndRead() appName\n" << getLine <<endl;
                 appDataGood = false;
                 break;
-              }
+              }//}
               
-              // 取得 pid
-              //cout << "index:" << index <<endl;
+              //{ -- get pid
               string appPid = subCharArray(getLine, getLineSize, '|', index++);
               if (appPid.size()!=0) {
                 if (!StringToNumber(appPid, &tempApp.pid)) {
@@ -222,94 +227,102 @@ class CollectionFile {
                 cout << "(error) CollectionFile::openFileAndRead() appPid:NULL \n" << getLine <<endl;
                 appDataGood = false;
                 break;
-              }
-            } else { // 從 lastPoint 中 取 name pid 出來給 tempApp
+              }//}
+            } else {
               tempApp.namePoint = lastPoint.app[getAppNum].namePoint;
               tempApp.pid = lastPoint.app[getAppNum].pid;
-            }
+            }//}
             
-            // 找 TotalPss
+            //{ == get TotalPss
             string appTotalPss = subCharArray(getLine, getLineSize, '|', index++);
             if (appTotalPss.size()!=0) {
               if (!StringToNumber(appTotalPss, &tempApp.totalPss)) {
-                // 可能只是 "沒有取得資料"
+                // 可能只是 "手機沒有取得資料"
                 if (appTotalPss == "null") {
-                  tempApp.totalPss = -1;
+                  tempApp.totalPss = Point::App::NULL_DATA;
                 } else {
+                  tempApp.totalPss = Point::App::NULL_DATA;
                   cout << "(error) CollectionFile::openFileAndRead() appTotalPss: " << appTotalPss <<endl;
                   appDataGood = false;
                 }
               }
             } else {
-              cout << "(error) CollectionFile::openFileAndRead() appTotalPss:NULL \n" << getLine <<endl;
+              cout << "(error) CollectionFile::openFileAndRead() appTotalPss.size():0 getLine:(last line)\n" << getLine <<endl;
               appDataGood = false;
               break;
-            }
+            }//}
             
-            // 找 oom_score
+            //{ == get oom_score
             string appOomScore = subCharArray(getLine, getLineSize, '|', index++);
             if (appOomScore.size()!=0) {
               if (!StringToNumber(appOomScore, &tempApp.oom_score)) {
-                tempApp.oom_score = -10000;
+                tempApp.oom_score = Point::App::NULL_DATA;
                 cout << "(error) CollectionFile::openFileAndRead() appOomScore: " << appOomScore <<endl;
                 appDataGood = false;
               }
             } else {
-              cout << "(error) CollectionFile::openFileAndRead() appOomScore:NULL \n" << getLine <<endl;
+              cout << "(error) CollectionFile::openFileAndRead() appOomScore.size():0 getLine:(last line)\n" << getLine <<endl;
               appDataGood = false;
               break;
-            }
+            }//}
             
-            // 找 ground
+            //{ == get ground
             string appGround = subCharArray(getLine, getLineSize, '|', index++);
             if (appGround.size()!=0) {
               if (!StringToNumber(appGround, &tempApp.ground)) {
-                tempApp.ground = -1;
+                tempApp.ground = Point::App::NULL_DATA;
                 cout << "(error) CollectionFile::openFileAndRead() appGround: " << appGround <<endl;
                 appDataGood = false;
               }
             } else {
-              cout << "(error) CollectionFile::openFileAndRead() appGround:NULL \n" << getLine <<endl;
+              cout << "(error) CollectionFile::openFileAndRead() appGround.size():0 getLine:(last line)\n" << getLine <<endl;
               appDataGood = false;
               break;
-            }
+            }//}
             
-            // 找 oom_adj
+            //{ == get oom_adj
             string appOomAdj = subCharArray(getLine, getLineSize, '|', index++);
             if (appOomAdj.size()!=0) {
               if (!StringToNumber(appOomAdj, &tempApp.oom_adj)) {
-                tempApp.oom_adj = -10000;
-                cout << "(error) CollectionFile::openFileAndRead() appOomAdj: " << appOomAdj <<endl;
-                appDataGood = false;
+                // 可能只是 "手機沒有取得資料"
+                if (appTotalPss == "null") {
+                  tempApp.oom_adj = Point::App::NULL_DATA;
+                } else {
+                  tempApp.oom_adj = Point::App::NULL_DATA;
+                  cout << "(error) CollectionFile::openFileAndRead() appOomAdj: " << appTotalPss <<endl;
+                  appDataGood = false;
+                }
               }
             } else {
-              cout << "(error) CollectionFile::openFileAndRead() appOomAdj:NULL \n" << getLine <<endl;
+              cout << "(error) CollectionFile::openFileAndRead() appOomAdj.size():0 getLine:(last line)\n" << getLine <<endl;
               appDataGood = false;
               break;
-            }
+						}//}
             
             // 將 APP 放入 OneShot 中
             thisPoint.app[getAppNum] = tempApp;
           } else {
-            appDataGood = false;
+						// 到這邊的話代表 App 數量不對
             cout << "(error) CollectionFile::openFileAndRead() procNum not enough"<<endl;
-            printf("getAppNum(%d) appNum(%d)", getAppNum, thisPoint.appNum);
+            cout << "need " << thisPoint.appNum << " app, but we just get " << getAppNum << " app"<<endl;
+						appDataGood = false;
+						thisPoint.appNum = getAppNum;
             break;
           }
-        } // 讀取 APP 詳細資料 loop
+				} //} 讀取 APP 詳細資料 loop
         
-        /** 接下來為其他資料的讀取
-         * 主要是將 ':' 符號前的資料抓出來比對
-         * 並且做相對應的事情
+        /** ----- 3. sensor data
+				 *  接下來為其他資料的讀取
+         *  主要是將 ':' 符號前的資料抓出來比對
+         *  並且做相對應的事情
          */
-        
         while (fgets(getLine, getLineSize, file) != NULL) {
           line++;
-          // 發現和 '----------' 一樣的話就換下一筆資料
+          //{ === 發現和 '----------' 一樣的話就換下一筆資料
           if (strstr(getLine,"----------") != NULL) {
             break;
-          }
-          // 抓出指標物
+          }//}
+          //{ === 抓出指標物
           string indicate = subCharArray(getLine, getLineSize, ':', 0);
           if (indicate == "Screen") {
             string screen(getLine + 7);
@@ -326,7 +339,11 @@ class CollectionFile {
           } else if (indicate == "WiFi") {
             
           } else if (indicate == "G-sensor") {
-            // attention:G-sensor 非常長 目前最長有看到 32645的
+						// 讀到結束為止 因為後面世界長
+						char c;
+						do {
+							c = fgetc (file);
+						} while (c != '\0' && c != '\n' && c != EOF);
           } else if (indicate == "Location") {
             
           } else if (indicate == "WiFiSensor") {
@@ -343,19 +360,18 @@ class CollectionFile {
           } else { // 都沒有抓出的話
             cout << "fileName:" << fileName <<endl;
             cout << "(error) CollectionFile::openFileAndRead() indicate:"<< indicate << "fileName:" << fileName << " line:" << line <<endl;
-          }
+          }//}
         }
         lastPoint = thisPoint;
         pattern.push_back(thisPoint);
-      } // get Point loop
+      } //} end 順著存每一個 Point
       
       fclose(file);
       return true;
     };
 
-    // 取得日期的 function
-    bool setAllDateTime() {
-      // 事先設定好 fileName 可以呼叫這個
+    // string to date 取得日期的 function
+    bool setAllDateTime() { // 事先設定好 fileName 可以呼叫這個
       return date.setAllDateTime(fileName);
     };
     bool setAllDateTime(string fileName) {
@@ -363,7 +379,7 @@ class CollectionFile {
       return date.setAllDateTime(fileName);
     };
     
-    // 比較的是時間的新舊，1:2:4 會大於 1:2:3
+    // 比時間哪個比較新舊 (ps: 1:2:4 會大於 1:2:3)
     bool operator > (const CollectionFile &otherFile)const {
       return date > otherFile.date;
     };
@@ -372,6 +388,14 @@ class CollectionFile {
     };
     
   private:
+		/** 剪取中間某一段資料
+		 *  charArray : 整段資料 (ex: name|15989|null|658|0|9|)
+		 *  size : charArray 長度 (ex: 25)
+		 *  subUnit : 要剪的字元 (ex: '|')
+		 *  whichData : 要剪的區段 (ex: 1 => return 15989)
+		 *  return : 0    1     2    3   4 5  (ps: 以上面為例)
+		 *           name|15989|null|658|0|9|
+		 */
     string subCharArray(const char* charArray, int size, char subUnit, int whichData) {
       if (whichData<0)  // 防呆
         return string("");
@@ -379,23 +403,16 @@ class CollectionFile {
       int head = 0;
       int end = 0;
       for (int i=0; i<size; i++) {
-        if (charArray[i] == subUnit) {
+        if (charArray[i] == subUnit) { // 尋找相同字元
           whichData--;
           if (whichData == 0) { // 找到頭了
             head = i+1;
           } else if (whichData == -1) { // 確定找完了
             end = i;
-            if (head == end)  // 怕裡面沒有資料
+            if (head < end)  // 怕裡面沒有資料
+							return string(charArray + head, end - head);
+            else
               return string("");
-            
-            int size = end - head + 1;
-            char temp[size];
-            for (int j=0; j<size-1; j++) {
-              temp[j] = charArray[head+j];
-            }
-            temp[size-1] = '\0';
-            
-            return string(temp);
           }
         }
       }

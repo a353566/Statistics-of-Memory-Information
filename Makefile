@@ -7,11 +7,15 @@ TARGETS = read
 # 表示 "clean" 不是一個真正的檔案目標，只是一個標記
 
 all: clean $(TARGETS)
-	./$(TARGETS) ./data/mydata_0311_0330/
+	./$(TARGETS) ./data/0313_0404/
+#	./$(TARGETS) ./data/mydata_0311_0330/
 # ./xxx 是順便執行
 
 clean:
 	rm -f $(TARGETS)
+
+my: clean $(TARGETS)
+	./$(TARGETS) ./data/mydata_0311_0330/
 
 $(TARGETS): $(TARGETS).cpp
 #	g++ -o $@ -I$(RNNLIB) $^ $(libnetcdf_c++.so)
