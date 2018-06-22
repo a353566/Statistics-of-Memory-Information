@@ -11,7 +11,7 @@
 //#define EXPERIMENT_debug_oomAdj_less_than_0
 //#define EXPERIMENT_debug_oomAdj_rate_onEachApp
 #define EXPERIMENT_debug_oomAdj_statistics
-//#define EXPERIMENT_debug_IntervalTime
+#define EXPERIMENT_debug_IntervalTime
 
 #include "include/DateTime.hpp"
 #include "include/StringToNumber.hpp"
