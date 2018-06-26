@@ -6,16 +6,20 @@ TARGETS = read
 .PHONY: clean
 # 表示 "clean" 不是一個真正的檔案目標，只是一個標記
 
-all: clean $(TARGETS)
-	./$(TARGETS) ./data/0313_0404/
-#	./$(TARGETS) ./data/mydata_0311_0330/
+all: u2
 # ./xxx 是順便執行
 
 clean:
 	rm -f $(TARGETS)
 
 my: clean $(TARGETS)
-	./$(TARGETS) ./data/mydata_0311_0330/
+	./$(TARGETS) ./data/my_0311_0330/
+
+u2: clean $(TARGETS)
+	./$(TARGETS) ./data/u2_0313_0324/
+	
+u4: clean $(TARGETS)
+	./$(TARGETS) ./data/u4_0313_0404/
 
 $(TARGETS): $(TARGETS).cpp
 #	g++ -o $@ -I$(RNNLIB) $^ $(libnetcdf_c++.so)

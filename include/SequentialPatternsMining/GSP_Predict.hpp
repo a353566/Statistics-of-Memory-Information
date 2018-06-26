@@ -7,6 +7,9 @@
 #include "../Sequence.hpp"
 #include "../PredictResult.hpp"
 #include "GSP.hpp"
+
+//#define GSP_PREDICT_HPP_debug_output_countAppMap
+
 using namespace std;
 
 typedef int elemType;
@@ -27,11 +30,14 @@ class GSP_Predict {
 				countAppMap.insert(make_pair(iter->second, iter->first));
 			}
 			
-			/*for (map<elemType, int>::iterator iter= countAppMap.begin();
+			// 輸出 countAppMap 排序結果
+#ifdef GSP_PREDICT_HPP_debug_output_countAppMap
+			for (map<elemType, int>::iterator iter= countAppMap.begin();
 					 iter!=countAppMap.end(); iter++)
 			{ 
 				cout << iter->first << ":" << iter->second <<endl;
-			}*/
+			}
+#endif
 		}
 		
 		/** 在 stats 找尋相似的 pattern, 再回傳給 predict 做最後判斷
