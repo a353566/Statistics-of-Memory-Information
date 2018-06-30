@@ -13,7 +13,7 @@ clean:
 	rm -f $(TARGETS)
 
 my: clean $(TARGETS)
-	./$(TARGETS) ./data/my_0311_0330/
+	./$(TARGETS) ./data/my_0311_0530/
 
 u2: clean $(TARGETS)
 	./$(TARGETS) ./data/u2_0313_0324/

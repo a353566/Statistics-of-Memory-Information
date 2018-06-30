@@ -6,11 +6,16 @@
 #include <iostream>
 //#include <netcdfcpp.h>
 
+#define PIN_TESTEND_ON_DATAEND
+#define TRAINING_INTERVAL_DAY 63
+#define TEST_INTERVAL_DAY 7
+
 //#define EXPERIMENT_debug_addOom_adjStat
 
 //#define EXPERIMENT_debug_oomAdj_less_than_0
 //#define EXPERIMENT_debug_oomAdj_rate_onEachApp
 #define EXPERIMENT_debug_oomAdj_statistics
+//#define EXPERIMENT_debug_Print_Event
 //#define EXPERIMENT_debug_IntervalTime
 
 #include "include/DateTime.hpp"
@@ -156,7 +161,7 @@ class CollectionAllData {
     /** allEventVec 主要是放入了 發生過的事件 並依序放好
      *  其中的 Event 是使用者剛好切換 APP 或是開關螢幕也會知道
      */
-    vector<Event> allEventVec;
+    vector<Event> allEventVec; 
     
     CollectionAllData() {};
     
@@ -180,9 +185,9 @@ class CollectionAllData {
 				// 找所有 allPatternVec::app 中 兩者 point 一樣的 (表示有找到)
         for (int j=0; j<allPatternVec.size(); j++) {
           for (int k=0; k<allPatternVec[j].appNum; k++) {
-            if (i==allPatternVec[j].app[k].namePoint) {
+            if (i==allPatternVec[j].apps[k].namePoint) {
               newAppDetail.findTimes++;
-              newAppDetail.addOom_adjStat(allPatternVec[j].app[k].oom_adj);
+              newAppDetail.addOom_adjStat(allPatternVec[j].apps[k].oom_adj);
               break;
             }
           }
@@ -327,112 +332,157 @@ class CollectionAllData {
 			}
 #endif
     }
-
-    // 主要將資料裝到 allEventVec
+		
+		/** 將 allPatternVec 整理後裝到這裡 allEventVec
+		 *  查看 allPatternVec 中 oom_adj 發生改變的狀況
+		 *  主要是檢查前後兩個 Point (currPoint, nextPoint) 中的 apps 的變化
+		 *  有重大變化則加到 allPatternVec : 
+		 *   | 1. reuse app : 檢查 oom_adj -> 0
+		 *   | 2. creat app : nextPoint 才出現
+		 *   | 3. screen status change : 螢幕開關
+		 *  unneededAppArray : 不會用到的 APP 陣列
+		 */
     void makeAllEventVec(bool *unneededAppArray) {
-      
-      // 將 allPatternVec 整理後裝到這裡 allEventVec
-      // 查看 oom_adj 發生改變的狀況 allPatternVec
-      int changeTimes = 0;
-      for (int i=0; i+1<allPatternVec.size(); i++) {
-        Event thisEvent;
-        
-        bool isChange = false;
-        bool isOom_adjCgToZero = false;
-        
-        Point::App *thisApp = allPatternVec[i].app;
-        int thisAppNum = allPatternVec[i].appNum;
-        Point::App *nextApp = allPatternVec[i+1].app;
-        int nextAppNum = allPatternVec[i+1].appNum;
-        bool isNextAppMatch[nextAppNum];    // 看是不是所有的下一個App都有對應到
-        for (int j=0; j<nextAppNum; j++) {
-          // 順便過濾
-          if (unneededAppArray[nextApp[j].namePoint]) {
-            isNextAppMatch[j] = true;
-          } else {
-            isNextAppMatch[j] = false;
+			int scoreExperiment[1001] = {0}; //(mason)
+      int AppsChangeTimes = 0;	// Point 前後 apps 改變次數
+      //{ 檢查前後兩個 Point (currPoint, nextPoint) 中 apps 的變化
+			vector<Point>::iterator currPoint = allPatternVec.begin();
+			vector<Point>::iterator nextPoint = allPatternVec.begin(); nextPoint++;
+      for (; nextPoint!=allPatternVec.end(); currPoint++, nextPoint++) {
+				/** connect two point (currPoint, nextPoint)
+				 *   1. same pid and name
+				 *   2. same name, but difference pid
+				 *   3. other
+				 */
+				//{ initial
+				vector<Point>::iterator thisPoint = currPoint; // (mason) out
+        Point::App *currApps = currPoint->apps;
+        int currAppsNum = currPoint->appNum;
+        Point::App *nextApps = nextPoint->apps;
+        int nextAppsNum = nextPoint->appNum;
+				// 紀錄是不是所有 current & next 的 App 都有對應到 and build
+        bool *currAppsMatch = buildMatchList(&*currPoint, unneededAppArray);
+        bool *nextAppsMatch = buildMatchList(&*nextPoint, unneededAppArray);//}
+				
+				// ----- 1. same pid and name
+				vector<pair<int, int> > PNpairs = buildSamePNpairs(&*currPoint, &*nextPoint, currAppsMatch, nextAppsMatch);
+				
+				// ----- 2. same name, but difference pid
+				vector<pair<int, int> > Ppairs = buildSamePpairs(&*currPoint, &*nextPoint, currAppsMatch, nextAppsMatch);
+				
+				// ----- 3. other (在 Match 表格裡)
+				
+				/** 分析上面整理出來的配對
+				 *  1. reuse App part : analysis PNpairs
+				 *       method : oom_adj -> 0 , record it
+				 *  2. creat App : analysis Next Match List
+				 *       method : next app oom_adj is 0 , record it
+				 *  3. reuse App but pid is difference : analysis Ppairs
+				 *       method : oom_adj -> 0 , record it
+				 *  4. screen status change
+				 */
+				//{ initial
+        Event analysisEvent;
+        bool isOom_adjCgToZero; // 看 oom_adj 有沒有變成0
+        bool isCreatNewApp;     // 有新開的APP
+        bool isScreenChange;    // 螢幕是否變化
+				vector<pair<int, int> >::iterator pairIter;
+				//}
+				
+				//{ ----- 1. reuse App part : analysis PNpairs
+				isOom_adjCgToZero = false;
+				for (pairIter = PNpairs.begin(); pairIter != PNpairs.end(); pairIter++) {
+					Point::App *currApp = currPoint->getAppWithIndex(pairIter->first);
+					Point::App *nextApp = nextPoint->getAppWithIndex(pairIter->second);
+					if (currApp->oom_adj != nextApp->oom_adj && nextApp->oom_adj == 0) {
+						// if (0<=nextApp->oom_score && nextApp->oom_score<=1000)
+							// scoreExperiment[nextApp->oom_score]++;
+						
+						isOom_adjCgToZero = true;
+						Event::Case newCase;  // 收集 case
+						newCase.namePoint = currApp->namePoint;
+						newCase.isCreat = false;
+						newCase.thisApp = currApp;
+						newCase.nextApp = nextApp;
+						analysisEvent.caseVec.push_back(newCase);
+					}
+				}//}
+				
+				//{ ----- 2. creat App : analysis Next Match List
+				isCreatNewApp = false;
+        for (int i=0; i<nextAppsNum; i++) {
+          if (!nextAppsMatch[i] && nextApps[i].oom_adj==0) {
+						isCreatNewApp = true;
+						Event::Case newCase; // 收集 case
+						newCase.namePoint = nextApps[i].namePoint;
+						newCase.isCreat = true;
+						newCase.nextApp = &(nextApps[i]);
+						analysisEvent.caseVec.push_back(newCase);
           }
-        }
-        // 從這一個往下連接，一一找一樣的 App
-        for (int j=0; j<thisAppNum; j++) {
-          // 過濾一些不需要檢查的 app
-          if (unneededAppArray[thisApp[j].namePoint]) {
-            continue;
-          }
-          
-          bool isFindApp = false;
-          for (int k=0; k<nextAppNum; k++) {
-            if (isNextAppMatch[k]) {
-              continue;
-            }
-            // namePoint 一樣的話，代表示同的 App
-            if (thisApp[j].namePoint == nextApp[k].namePoint) {
-              isFindApp = true;
-              isNextAppMatch[k] = true;
-              // 看 oom_adj有沒有變化
-              if (thisApp[j].oom_adj != nextApp[k].oom_adj) {
-                // 檢查 oom_adj 下一刻變0的狀況
-                if (nextApp[k].oom_adj == 0) {
-                  isOom_adjCgToZero = true;
-                  // 收集此case
-                  Event::Case thisCase;
-                  thisCase.namePoint = thisApp[j].namePoint;
-                  thisCase.isCreat = false;
-                  thisCase.thisApp = &thisApp[j];
-                  thisCase.nextApp = &nextApp[k];
-                  thisEvent.caseVec.push_back(thisCase);
-                }
-              }
-              continue;
-            }
-          }
-          if (!isFindApp) {
-            isChange = true;
-          }
-        }
-        // 看有沒有新的 app 被單獨創出來，而且還是0
-        bool isCreatNewApp = false;
-        for (int j=0; j<nextAppNum; j++) {
-          if (!isNextAppMatch[j]) {
-            if (nextApp[j].oom_adj==0) {
-              isCreatNewApp = true;
-              // 收集此case
-              Event::Case thisCase;
-              thisCase.namePoint = nextApp[j].namePoint;
-              thisCase.isCreat = true;
-              thisCase.nextApp = &nextApp[j];
-              thisEvent.caseVec.push_back(thisCase);
-            }
-          }
-        }
-        
-        // 有改變的話 changeTimes++
-        if (isChange || isCreatNewApp) {
-          changeTimes++;
-        }
-        
-        // 看有沒有螢幕開關，但沒有其他變化
-        bool isScreenChange = (allPatternVec[i].screen != allPatternVec[i+1].screen);
-        // 看 oom_adj 有沒有變成0 或是有新開的APP 以及螢幕是否有改變
-        if (isOom_adjCgToZero || isCreatNewApp || isScreenChange) {
-          // 都有的話將資料寫入
-          thisEvent.thisDate = &allPatternVec[i].date;
-          thisEvent.nextDate = &allPatternVec[i+1].date;
-          thisEvent.isThisScreenOn = allPatternVec[i].screen;
-          thisEvent.isNextScreenOn = allPatternVec[i+1].screen;
-          allEventVec.push_back(thisEvent);
-        }
-      }
-
+        }//}
+				
+				//{ ----- 3. reuse App but pid is difference : analysis Ppairs
+				//map<int, int> SNDPnamePointMap;
+				for (pairIter = Ppairs.begin(); pairIter != Ppairs.end(); pairIter++) {
+					Point::App *currApp = currPoint->getAppWithIndex(pairIter->first);
+					Point::App *nextApp = nextPoint->getAppWithIndex(pairIter->second);
+					//printf("SNDPnamePointMap:%1d: %6d:%3d | %6d:%3d | %3d %s\n", ++SNDPnamePointMap[currApp->namePoint], currApp->pid, currApp->oom_adj, nextApp->pid, nextApp->oom_adj, currApp->namePoint, allAppNameVec[currApp->namePoint].c_str());
+					
+					if (currApp->oom_adj != nextApp->oom_adj && nextApp->oom_adj == 0) {isOom_adjCgToZero = true;
+						Event::Case newCase;  // 收集 case
+						newCase.namePoint = currApp->namePoint;
+						newCase.isCreat = false;
+						newCase.thisApp = currApp;
+						newCase.nextApp = nextApp;
+						analysisEvent.caseVec.push_back(newCase);
+					}
+				}//}
+				
+				//  ----- 4. screen status change
+				isScreenChange = (thisPoint->screen != nextPoint->screen);	
+				
+				//{ final 有上述改變的話則記錄
+        if (isOom_adjCgToZero || isCreatNewApp || isScreenChange) { // 看 oom_adj 有沒有變成0 或是有新開的APP 以及螢幕是否有改變
+          analysisEvent.thisDate = &thisPoint->date;
+          analysisEvent.nextDate = &nextPoint->date;
+          analysisEvent.isThisScreenOn = thisPoint->screen;
+          analysisEvent.isNextScreenOn = nextPoint->screen;
+          allEventVec.push_back(analysisEvent);
+        }//}
+				
+        //{ (後面輸出用) Point 前後有改變的話 AppsChangeTimes++
+				bool isChange = false;
+				for (int i=0; i<currAppsNum && !isChange; i++) {
+					if (!currAppsMatch[i]) {
+						isChange = true;
+					}
+				}
+				for (int i=0; i<nextAppsNum && !isChange; i++) {
+					if (!nextAppsMatch[i]) {
+						isChange = true;
+					}
+				}
+        if (isChange) {
+          AppsChangeTimes++;
+				}//}
+			}//}
+			
       //{ allEventVec 中的 app 可能出現重複的 app (收集時就有問題)
 			for (int i=0; i<allEventVec.size(); i++) {
 				allEventVec.at(i).sortOut();
 			}//}
       
+			// (mason) score 
+			/*for (int i=0; i<1001; i++) {
+				if (scoreExperiment[i]>0) {
+					printf("%5d | %d\n", i, scoreExperiment[i]);
+				}
+			}*/
+			
       // 輸出 each oom_adj 統計
 #ifdef EXPERIMENT_debug_oomAdj_statistics
 			cout << "    ================= oom_adj =================" <<endl;
-			cout << "Change Times : " << changeTimes <<endl;
+			cout << "Change Times : " << AppsChangeTimes <<endl;
 			cout << "oom_adj change(creat) to zero times : " << allEventVec.size() <<endl;
 			
 			cout << "oom_adj change detail : " <<endl;
@@ -449,27 +499,113 @@ class CollectionAllData {
 			}
 			cout<<endl;
 #endif
-			
 		}
     
+		/** 建立表格，並去除 unneededAppArray 中的 app
+		 *  point : 從中取得 apps 並對此建立
+		 *  unneededAppArray : 不需要的 app list
+		 *  return : Match List
+		 */
+		bool *buildMatchList(const Point *point, bool *unneededAppArray) {
+			bool *matchList = new bool[point->appNum];
+			for (int i=0; i<point->appNum; i++) {
+				matchList[i] = unneededAppArray[point->apps[i].namePoint];
+			}
+			return matchList;
+		}
+		
+		/** 建立 same pid & name pair
+		 *  currPoint, nextPoint : 目前和下次的 Point
+		 *  currAppsMatch, nextAppsMatch : 有無配對的 list
+		 *  return : 回傳配對表，且更改 Match list
+		 */
+		vector<pair<int, int> > buildSamePNpairs(const Point *currPoint, const Point *nextPoint, bool *currAppsMatch, bool *nextAppsMatch) {
+			//{ initial
+			vector<pair<int, int> > PNpairs;
+			Point::App *currApps = currPoint->apps;
+			int currAppsNum = currPoint->appNum;
+			Point::App *nextApps = nextPoint->apps;
+			int nextAppsNum = nextPoint->appNum;//}
+			
+			//{ find same pid & namePoint
+			for (int i=0; i<currAppsNum; i++) {
+				if (currAppsMatch[i]) { continue; }
+				
+				for (int j=0; j<nextAppsNum; j++) {
+					if (nextAppsMatch[j]) { continue; }
+					
+					if (currApps[i].pid == nextApps[j].pid && currApps[i].namePoint == nextApps[j].namePoint) {
+						currAppsMatch[i] = true;
+						nextAppsMatch[j] = true;
+						PNpairs.push_back(make_pair(i, j));
+						break;
+					}
+				}
+			}//}
+			
+			return PNpairs;
+		}
+		
+		/** 建立 same pid but difference name pair
+		 *  currApps, nextApps : 目前和下次的 Point
+		 *  currAppsMatch, nextAppsMatch : 有無配對的 list (應該已經去掉不少了)
+		 *  return : 回傳配對表，且更改 Match list
+		 */
+		vector<pair<int, int> > buildSamePpairs(const Point *currPoint, const Point *nextPoint, bool *currAppsMatch, bool *nextAppsMatch) {
+			//{ initial
+			vector<pair<int, int> > Ppairs;
+			Point::App *currApps = currPoint->apps;
+			int currAppsNum = currPoint->appNum;
+			Point::App *nextApps = nextPoint->apps;
+			int nextAppsNum = nextPoint->appNum;//}
+			
+			//{ find same pid & namePoint
+			for (int i=0; i<currAppsNum; i++) {
+				if (currAppsMatch[i]) { continue; }
+				
+				for (int j=0; j<nextAppsNum; j++) {
+					if (nextAppsMatch[j]) { continue; }
+					
+					if (currApps[i].namePoint == nextApps[j].namePoint) {
+						currAppsMatch[i] = true;
+						nextAppsMatch[j] = true;
+						Ppairs.push_back(make_pair(i, j));
+						break;
+					}
+				}
+			}//}
+			
+			return Ppairs;
+		}
+		
+		/** 加入 oneShot 到 allPatternVec 中，並更改 name index
+		 *  oneShot : 要加入的 Point
+		 *  oneAppNameVec : 舊的名字序列
+		 */
     void addonePoint(Point oneShot, const vector<string> *oneAppNameVec) {
       for (int i=0; i<oneShot.appNum; i++) {
-        findAppNamePoint(&oneShot.app[i], &(*oneAppNameVec)[oneShot.app[i].namePoint]);
+        findAppNameIndex(&oneShot.apps[i], &(*oneAppNameVec)[oneShot.apps[i].namePoint]);
       }
       allPatternVec.push_back(oneShot);
     }
     
-    int findAppNamePoint(Point::App *app, const string *appName) {
+		/** 回傳 appName 在 allAppNameVec 中是哪一個 index
+		 *  並加到 app 中和回傳
+		 *  app : 要被改寫的 APP
+		 *  appName : app name
+		 *  return : appName's index in allAppNameVec
+		 */
+    int findAppNameIndex(Point::App *app, const string *appName) {
       // 先檢查 allAppNameVec 中有沒有此名字
       for (int i=0; i<allAppNameVec.size(); i++) {
-        // 有找到的話直接回傳新的 namePoint
+        // 找到後直接回傳新的 namePoint
         if (*appName == allAppNameVec[i]) {
           app->namePoint = i;
           return i;
         }
       }
       
-      // 沒找到的話則加進去，並取得新的 Point
+      // 沒找到則將其加進去，並取得新的 index
       allAppNameVec.push_back(*appName);
       app->namePoint = allAppNameVec.size()-1;
       return app->namePoint;
@@ -487,7 +623,7 @@ class DataMining {
     DateTime intervalTime;
     vector<int> trainingDMEventPoint;
     vector<int> testDMEventPoint;
-    vector<string> DMEPtoEvent;
+    vector<string> DMEPtoEvent; // Data Mining Each Point to Event
     DataMining() {
       screen_turn_on = string("screen turn on");
       screen_turn_off = string("screen turn off");
@@ -517,22 +653,24 @@ class DataMining {
       EPscreen_long_off = DMEPtoEvent.size()-1;
 
 			// 輸出 point to AppName
-			//for (int i=0; i<DMEPtoEvent.size(); i++)
-			//	cout << i << "\t:" << DMEPtoEvent[i] <<endl;
+#ifdef EXPERIMENT_debug_Print_Event
+			for (int i=0; i<DMEPtoEvent.size(); i++)
+				cout << i << "\t:" << DMEPtoEvent[i] <<endl;
+#endif
 			
 			// screenPattern : 主要是將 screen 亮著的區間做間隔
       vector<pair<int, int> > screenPattern;
       buildScreenPattern(&screenPattern, eventVec);
 			cout << "Screen on->off interval have (" << screenPattern.size() << ") times" <<endl;
 			
-			// 將 screenPattern 用時間分成 training test 兩份
-			// 讓 eventVec 可以直接分成兩個資料
-			DateTime intervalTime;	// 設定 training data 要多久
-			intervalTime.initial();
-			intervalTime.day = 14;	// 2 week
-			// 將資料分類成 training、test
-			buildData(&intervalTime, &screenPattern, eventVec);
+			/** 將 screenPattern 用時間分成 training test 兩份
+			 *  讓 eventVec 可以直接分成兩個資料
+			 *  相關 define parameter 在上面
+			 *  TRAINING_INTERVAL_DAY , TEST_INTERVAL_DAY 
+			 */
+			buildData(&screenPattern, eventVec);
 			
+			//return false;
 			// remove the same action
 			removeSameAction();
 			
@@ -551,7 +689,6 @@ class DataMining {
 			
 			// ElemStatsTree 實作機率與統計部分
 			GSP_Predict gspPredict(&gsp);
-			
 			// test data experiment
 			const int maxBackApp = 9;
 			const int maxPredictApp = 9;
@@ -834,40 +971,92 @@ class DataMining {
 		
 		/** 利用螢幕分隔(screenPattern)來切成兩個時間段
 		 *  並將其資料分別裝入 trainingDMEventPoint、testDMEventPoint
-		 *  intervalTime : 要切割多少 training 時間
 		 *  screenPattern : 螢幕亮著的區間
 		 *  eventVec : 使用 APP 流程
+		 *  TRAINING_INTERVAL_DAY, TEST_INTERVAL_DAY : 分別為 training, test 時間
+		 *  (bug) 一定要小於 TrainingIT.day & TestIT.day，沒有寫防呆
 		 */
-		void buildData(DateTime *intervalTime, vector<pair<int, int> > *screenPattern, vector<Event> *eventVec) {
+		void buildData(vector<pair<int, int> > *screenPattern, vector<Event> *eventVec) {
+			//{ 設定 training & test data 要多久
+			DateTime TrainingIT, TestIT; // Training interval time , test interval time
+			TrainingIT.initial_Day(TRAINING_INTERVAL_DAY);
+			TestIT.initial_Day(TEST_INTERVAL_DAY);//}
+			
+			//{ initial
 			vector<pair<int, int> > trainingScnPatn, testScnPatn;
-			int testHead = 0;
-			DateTime *headTime = eventVec->at(screenPattern->at(testHead).first).thisDate;
-			for (testHead = 0; testHead<eventVec->size(); testHead++) { 
-				DateTime *endTime = eventVec->at(screenPattern->at(testHead).first).thisDate;
-				if (*endTime - *headTime > *intervalTime) { // (bug) 一定要小於 trainingIntervalTime.day，沒有寫防呆
+			int trainingStart = 0;
+			int trainingEnd = 0;
+			int testStart = 0;
+			int testEnd = screenPattern->size()-1;//}
+			
+			// 找出兩種資料的開頭和結尾
+#ifdef PIN_TESTEND_ON_DATAEND
+			//{ 以 data end 開始往前收集
+			DateTime *endTime = eventVec->at(screenPattern->at(testEnd).second).thisDate;
+			for (testStart = testEnd; 0<=testStart; testStart--) {
+				DateTime *headTime = eventVec->at(screenPattern->at(testStart).first).thisDate;
+				if (*endTime - *headTime > TestIT) { // (bug) 一定要小於 TestIT.day，沒有寫防呆
 					break;
 				}
 			}
-			// 裝進 trainingScnPatn
-			for (int i=0; i<testHead; i++) {
+			trainingEnd = testStart-1;
+			endTime = eventVec->at(screenPattern->at(trainingEnd).second).thisDate;
+			for (trainingStart = trainingEnd; 0<=trainingStart; trainingStart--) {
+				DateTime *headTime = eventVec->at(screenPattern->at(trainingStart).first).thisDate;
+				if (*endTime - *headTime > TrainingIT) { // (bug) 一定要小於 TrainingIT.day，沒有寫防呆
+					break;
+				}
+			}//}
+#else
+			//{ 以 data start 開始往後收集
+			DateTime *headTime = eventVec->at(screenPattern->at(trainingStart).first).thisDate;
+			for (trainingEnd = trainingStart; trainingEnd<eventVec->size(); trainingEnd++) {
+				DateTime *endTime = eventVec->at(screenPattern->at(trainingEnd).second).thisDate;
+				if (*endTime - *headTime > TrainingIT) { // (bug) 一定要小於 TrainingIT.day，沒有寫防呆
+					break;
+				}
+			}
+			testStart = trainingEnd+1;
+			headTime = eventVec->at(screenPattern->at(testStart).first).thisDate;
+			for (testEnd = testStart; testEnd<eventVec->size(); testEnd++) {
+				DateTime *endTime = eventVec->at(screenPattern->at(testEnd).second).thisDate;
+				if (*endTime - *headTime > TestIT) { // (bug) 一定要小於 TestIT.day，沒有寫防呆
+					break;
+				}
+			}//}
+#endif
+			
+			//{ 裝進 trainingScnPatn & testScnPatn
+			for (int i=trainingStart; i<=trainingEnd; i++) {
 				trainingScnPatn.push_back(screenPattern->at(i));
 			}
-			// 裝進 testScnPatn
-			for (int i=testHead; i<screenPattern->size(); i++) {
+			testStart = trainingEnd+1; // 通常
+			for (int i=testStart; i<=testEnd; i++) {
 				testScnPatn.push_back(screenPattern->at(i));
-			}
+			}//}
 			
-      // 整理後裝進 trainingDMEventPoint (training)、testDMEventPoint (test)
+      //{ 整理後裝進 trainingDMEventPoint (training)、testDMEventPoint (test)
       buildDMEventPoint(&trainingDMEventPoint, &trainingScnPatn, eventVec);
-      buildDMEventPoint(&testDMEventPoint, &testScnPatn, eventVec);
-			cout << "User training action have (" << trainingDMEventPoint.size() << ") times" <<endl;
-			cout << "User test action have (" << testDMEventPoint.size() << ") times" <<endl;
+      buildDMEventPoint(&testDMEventPoint, &testScnPatn, eventVec);//}
+			
+			//{ 輸出相關資訊
+			cout << "Training action data is between ";
+			eventVec->at(screenPattern->at(trainingStart).first).thisDate->output();
+			cout << " and\n                                ";
+			eventVec->at(screenPattern->at(trainingEnd).second).thisDate->output();
+			cout << "\nTraining data mining event point have (" << trainingDMEventPoint.size() << ") times" <<endl;
+			
+			cout << "Test action data is between ";
+			eventVec->at(screenPattern->at(testStart).first).thisDate->output();
+			cout << " and\n                            ";
+			eventVec->at(screenPattern->at(testEnd).second).thisDate->output();
+			cout << "\nTest data mining event point have (" << testDMEventPoint.size() << ") times" <<endl;//}
 		}
 		
     /** 如果有遇到一次發現多的 app 執行的話
-     * 就用 "oom_score" 來判斷先後
-     * 數字大的前面
-     * 最後都放到 trainingDMEventPoint 之中
+     *  就用 "oom_score" 來判斷先後
+     *  數字大的前面
+     *  最後都放到 trainingDMEventPoint 之中
      */
     void buildDMEventPoint(vector<int> *trainingDMEventPoint, vector<pair<int, int> > *usePattern, vector<Event> *eventVec) {
       // 用 usePattern 來取出

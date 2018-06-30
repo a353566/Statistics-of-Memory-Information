@@ -27,6 +27,20 @@ class DateTime {
       second = 0;
     }
     
+		void initial_Day(int days) {
+      initial();
+			day = days;
+			
+			while (day > MonthDay()) {
+				day = day - MonthDay();
+				month++;
+				if (month==12) {
+					year++;
+					month = 0;
+				}
+			}
+    }
+		
     bool setAllDateTime(std::string fileDate) {
       // 2017-12-16_03.04.28
       if (19 <= fileDate.size()) {
@@ -147,6 +161,7 @@ class DateTime {
     DateTime operator - (const DateTime &otherDate)const {
       bool isSubCarry = false;
       DateTime temp;
+			temp.initial();
       // second
       temp.second = second - otherDate.second;
       if (temp.second<0) {
@@ -181,8 +196,12 @@ class DateTime {
       }
       if (temp.day<0) {
         isSubCarry = true;
-        temp.year = year;
+        temp.year = year;		// 2 月會有所不同
         temp.month = month-1;
+				if (temp.month == 0) {
+					temp.month = 12;
+					temp.year--;
+				}
         temp.day += temp.MonthDay();
       }
       // month
@@ -224,11 +243,8 @@ class DateTime {
     
     // 此月有幾天
     int MonthDay() {
-      return MonthDay(month);
-    }
-    int MonthDay(int month) {
       switch(month){
-        case 1: case 3: case 5: case 7: case 8: case 10: case 12:
+        case 0: case 1: case 3: case 5: case 7: case 8: case 10: case 12:
           return 31;
           break;
         case 4: case 6: case 9: case 11:

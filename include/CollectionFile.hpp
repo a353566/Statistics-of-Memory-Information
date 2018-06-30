@@ -19,7 +19,7 @@ using namespace std;
  * 一個時間點的狀況
  * 主要是給 CollectionFile 來紀錄一連串時間用的
  * 但是目前 read.cpp::CollectionAllData 也有拿來用
- * 其中會有 app[] 來記錄當下時間點的所有 app 的狀況
+ * 其中會有 apps[] 來記錄當下時間點的所有 app 的狀況
  */
 class Point {
   public :
@@ -70,11 +70,15 @@ class Point {
     
     bool screen;
     int appNum;
-    App *app;
+    App *apps;
     
     bool getTime(string dateTime) {
       return date.setAllDateTime(dateTime);
     }
+		
+		App *getAppWithIndex(int index) {
+			return (0<=index && index<appNum)? &(apps[index]) : NULL;
+		}
 };
 
 class CollectionFile {
@@ -113,7 +117,7 @@ class CollectionFile {
             phoneID = string(temp+8);
           }
         } else {
-					cout << "(error) CollectionFile::openFileAndRead(): No read the start line " <<endl;
+					cout << "(error) CollectionFile::openFileAndRead(): Unable to read the start line. File: " << fileName <<endl;
           fclose(file);
           return false;
         }
@@ -181,7 +185,7 @@ class CollectionFile {
           break;
         }//}
         //{ === 2(c)AppData 讀取 each App 並且會依照 Big or Small 有不同的處理方式
-        thisPoint.app = new Point::App[thisPoint.appNum];
+        thisPoint.apps = new Point::App[thisPoint.appNum];
         for (int getAppNum=0; getAppNum<thisPoint.appNum; getAppNum++) {
           if (fgets(getLine, getLineSize, file) != NULL) {
             line++;
@@ -229,8 +233,8 @@ class CollectionFile {
                 break;
               }//}
             } else {
-              tempApp.namePoint = lastPoint.app[getAppNum].namePoint;
-              tempApp.pid = lastPoint.app[getAppNum].pid;
+              tempApp.namePoint = lastPoint.apps[getAppNum].namePoint;
+              tempApp.pid = lastPoint.apps[getAppNum].pid;
             }//}
             
             //{ == get TotalPss
@@ -300,7 +304,7 @@ class CollectionFile {
 						}//}
             
             // 將 APP 放入 OneShot 中
-            thisPoint.app[getAppNum] = tempApp;
+            thisPoint.apps[getAppNum] = tempApp;
           } else {
 						// 到這邊的話代表 App 數量不對
             cout << "(error) CollectionFile::openFileAndRead() procNum not enough"<<endl;
