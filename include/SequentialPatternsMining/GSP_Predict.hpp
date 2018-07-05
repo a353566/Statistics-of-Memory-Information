@@ -137,7 +137,7 @@ class GSP_Predict {
 					if (LMApp.first >= 0) {
 						// 檢查是否重複
 						if (!result.checkRepeat(LMApp.second)) {
-							result.resultPairs.push_back(make_pair(LMApp.second, 0));
+							result.resultPairs.push_back(make_pair(LMApp.second, LMApp.first));
 						}
 						// 在結果中移除，以方便下次搜尋
 						eraseApp(&simlPatnsMap, &LMApp);
@@ -162,6 +162,10 @@ class GSP_Predict {
 		};
 		
 		/** 取得預測的 APPs 根據不同方法
+		 *  1. get Weight for each level : 根據方法不同，取得不同的 weight
+		 *  2. calculate Total Weight for each app
+		 *  3. sort app with Total Weight : 依照 total weight 大小來排序，並寫入 PredictResult
+		 *  4. fill it : 剩下則給 (NO_APP, NO_WEIGHT)
 		 *  method : 計算的方法
 		 *  parameter : 不同方法參數不一樣
 		 *  usePatn(use Pattern) : 目前使用的 APP Pattern
@@ -176,7 +180,7 @@ class GSP_Predict {
 			map<int, vector<pair<elemType, int> > > simlPatnsMap = findSimilarPattern(usePatn);
 			map<int, double> weightMap;
 			
-			// 根據方法不同，取得不同的 weight
+			//{ ----- 1. get Weight for each level : 根據方法不同，取得不同的 weight
 			if (method == ConstLevel) {
 				weightMap = computeWeight_constLevel(appCountMap, &simlPatnsMap, parameter);
 			} else if (method == multiplyOfLevle) {
@@ -185,12 +189,12 @@ class GSP_Predict {
 				weightMap = computeWeight_powerOfLevel(appCountMap, &simlPatnsMap, parameter);
 			} else {
 				printf("GSP_Predict::predictResult_byMethod() No match any methodID, method: %d", method);
-			}
+			}//}
 			
-			// 計算 Total Weight for each app
+			//  ----- 2. calculate Total Weight for each app
 			multimap<double ,elemType> weightAppVec = computeTotalWeight_byLevel(appCountMap, &simlPatnsMap, &weightMap);
 			
-			// 依照 total weight 大小來排序，並寫入 PredictResult
+			//{ ----- 3. sort app with Total Weight : 依照 total weight 大小來排序，並寫入 PredictResult
 			PredictResult result;
 			if (!weightAppVec.empty()) {
 				// while 直到有 maxPredictApp 個APP，或數量不夠
@@ -202,12 +206,13 @@ class GSP_Predict {
 					}
 					oneApp++;
 				}
-			}
+			}//}
 			
-			// 剩下則給 (NO_APP, NO_WEIGHT) (ps: (app, count))
+			//{ ----- 4. fill it : 剩下則給 (NO_APP, NO_WEIGHT) (ps: (app, count))
 			while (result.size() < maxPredictApp) {
 				result.resultPairs.push_back(make_pair(PredictResult::NO_APP, PredictResult::NO_WEIGHT));
-			}
+			}//}
+			
 			return result;
 		};
 		
@@ -259,7 +264,6 @@ class GSP_Predict {
 			
 			return weights;
 		}
-		
 		
 		/** 計算 level weight (power Of Level) appCount 會隨著 level 提升
 		 *  appCountMap : 各個 APP 的統計數量
@@ -347,61 +351,128 @@ class GSP_Predict {
 		
 		/** 取得最長，再來是最多的那一個 app
 		 *  simlPatnsMap : (similarPatternsMap) 取得相似的 Pattern
-		 *  return : (level, which app)
+		 *  return : (count*100 + level, which app)
 		 *           return the app which is longest and most one.
 		 *           or NULL (pair(-1, -1))
 		 */
 		pair<int, elemType> getLongAndMostApp(map<int, vector<pair<elemType, int> > > *simlPatnsMap) {
-			int level = -1;
-			int app = PredictResult::NO_APP;
-			int count = 0;
-			map<int, vector<pair<elemType, int> > >::reverse_iterator simlPatns = simlPatnsMap->rbegin();
-			if (simlPatns != simlPatnsMap->rend()) {
-				level = simlPatnsMap->size();
-				app = simlPatns->second.at(0).second;
-				for (int i=0; i<simlPatns->second.size(); i++) {
-					if (count < simlPatns->second.at(i).second) {
-						app = simlPatns->second.at(i).first;
-						count = simlPatns->second.at(i).second;
-					}
-				}
-			}
-			return make_pair(level, app);
-		}
-		
-		/** 取得此 level 最多的那一個 app
-		 *  simlPatnsMap : (similarPatternsMap) 取得相似的 Pattern
-		 *  level : 指定的 level
-		 *  return : (level, which app)
-		 *           return the app which is most one in the level.
-		 *           or NULL (pair(-1, PredictResult::NO_APP))
-		 */
-		pair<int, elemType> getMostApp(map<int, vector<pair<elemType, int> > > *simlPatnsMap, int level) {
-			map<int, vector<pair<elemType, int> > >::iterator simlPatns = simlPatnsMap->find(level);
-			if (simlPatns != simlPatnsMap->end()) {
-				int app = simlPatns->second.at(0).first;
-				int count = simlPatns->second.at(0).second;
-				for (int i=0; i<simlPatns->second.size(); i++) {
-					if (count < simlPatns->second.at(i).second) {
-						app = simlPatns->second.at(i).first;
-						count = simlPatns->second.at(i).second;
-					}
-				}
-				return make_pair(level, app);
-			} else {
+			//{ initial
+			int maxLevel = simlPatnsMap->size();
+			int maxLevelCount = 0;
+			map<int, vector<pair<elemType, int> > >::iterator simlPatns;
+			if (maxLevel == 0) { // 沒結果
 				return make_pair(-1, PredictResult::NO_APP);
 			}
+			vector<elemType> sameCountApp;//}
+			
+			//{ 1. find maxLevelCount
+			simlPatns = simlPatnsMap->find(maxLevel);
+			for (int i=0; i<simlPatns->second.size(); i++) {
+				if (maxLevelCount < simlPatns->second.at(i).second) {
+					maxLevelCount = simlPatns->second.at(i).second;
+				}
+			}//}
+			
+			//{ 2. build sameCountApp : on Max Level
+			for (int i=0; i<simlPatns->second.size(); i++) {
+				if (maxLevelCount == simlPatns->second.at(i).second) {
+					sameCountApp.push_back(simlPatns->second.at(i).first); // push "app" into sameCountApp
+				}
+			}//}
+			
+			//{ 3. while
+			int level = maxLevel;
+			while (sameCountApp.size() > 1 && --level > 0) {
+				vector<elemType> lastSameCountApp;
+				int count = 0;
+				
+				//{ 3-1. find max Count on last Level, and include sameCountApp
+				simlPatns = simlPatnsMap->find(level);
+				for (int i=0; i<simlPatns->second.size(); i++) {
+					bool inSameCountApp = false; // 確認有在 sameCountApp 中
+					for (vector<elemType>::iterator iter = sameCountApp.begin(); iter != sameCountApp.end(); iter++) {
+						if (*iter == simlPatns->second.at(i).first) {
+							inSameCountApp = true;
+							break;
+						}
+					}
+					if (inSameCountApp && count < simlPatns->second.at(i).second) {
+						count = simlPatns->second.at(i).second;
+					}
+				}//}
+				
+				//{ 3-2. build lastSameCountApp : on Max Level
+				for (int i=0; i<simlPatns->second.size(); i++) {
+					bool inSameCountApp = false; // 確認有在 sameCountApp 中
+					for (vector<elemType>::iterator iter = sameCountApp.begin(); iter != sameCountApp.end(); iter++) {
+						if (*iter == simlPatns->second.at(i).first) {
+							inSameCountApp = true;
+							break;
+						}
+					}
+					if (inSameCountApp && count == simlPatns->second.at(i).second) {
+						lastSameCountApp.push_back(simlPatns->second.at(i).first); // push "app" into lastSameCountApp
+					}
+				}//}
+				
+				// 3-3. sameCountApp <- lastSameCountApp
+				sameCountApp = lastSameCountApp;
+			}//}
+			
+			//{ 4. 還是兩個以上的話直接在 MFU 中比 (map<elemType, int> *appCountMap)
+			if (sameCountApp.size() > 1) {
+				vector<elemType> lastSameCountApp;
+				int count = 0;
+				
+				//{ 4-1. find max Count on appCountMap, and include sameCountApp
+				for (map<elemType, int>::iterator appCount=appCountMap->begin();
+				     appCount!=appCountMap->end(); appCount++)
+				{
+					bool inSameCountApp = false; // 確認有在 sameCountApp 中
+					for (vector<elemType>::iterator iter = sameCountApp.begin(); iter != sameCountApp.end(); iter++) {
+						if (*iter == appCount->first) {
+							inSameCountApp = true;
+							break;
+						}
+					}
+					if (inSameCountApp && count < appCount->second) {
+						count = appCount->second;
+					}
+				}//}
+				
+				//{ 4-2. build lastSameCountApp : on appCountMap
+				for (map<elemType, int>::iterator appCount=appCountMap->begin();
+				     appCount!=appCountMap->end(); appCount++)
+				{
+					bool inSameCountApp = false; // 確認有在 sameCountApp 中
+					for (vector<elemType>::iterator iter = sameCountApp.begin(); iter != sameCountApp.end(); iter++) {
+						if (*iter == appCount->first) {
+							inSameCountApp = true;
+							break;
+						}
+					}
+					if (inSameCountApp && count == appCount->second) {
+						lastSameCountApp.push_back(appCount->first); // push "app" into lastSameCountApp
+					}
+				}//}
+				
+				// 4-3. sameCountApp <- lastSameCountApp
+				sameCountApp = lastSameCountApp;
+			}//}
+			
+			return make_pair(maxLevelCount*100 + maxLevel, sameCountApp[0]);
 		}
 		
 		/** 移除指定 APP
 		 *  simlPatnsMap : (similarPatternsMap) 取得相似的 Pattern
-		 *  rmApp : 要被刪掉的 APP
+		 *  rmApp : 要被刪掉的 APP (count*100 + level, which app)
 		 *  return : true : 正確刪掉
 		 *           false : 沒有找到
 		 */
 		bool eraseApp(map<int, vector<pair<elemType, int> > > *simlPatnsMap, pair<int, elemType> *rmApp) {
 			// 先取得那一層
-			vector<pair<elemType, int> > *levelVec = &(simlPatnsMap->at(rmApp->first));
+			int level = rmApp->first%100; // (ps: count*100 + level)
+			vector<pair<elemType, int> > *levelVec = &(simlPatnsMap->at(level));
 			// 在那一層中找到指定 APP
 			for (vector<pair<elemType, int> >::iterator iter = levelVec->begin();
 			     iter!=levelVec->end(); iter++)
@@ -410,7 +481,7 @@ class GSP_Predict {
 					levelVec->erase(iter);
 					// 如果此 vector 沒東西的話，map 那邊要記得刪掉
 					if (levelVec->size() == 0) {
-						simlPatnsMap->erase(rmApp->first);
+						simlPatnsMap->erase(level);
 					}
 					return true;
 				}

@@ -57,6 +57,7 @@ class PredictResult {
 			for (vector<pair<elemType, double> >::iterator oneApp = resultPairs.begin();
 					 oneApp != resultPairs.end(); oneApp++)
 			{
+				//cout << "(" << oneApp->first << ") ";
 				cout << "(" << oneApp->first << " ," << oneApp->second << ") ";
 			}
 			cout <<endl;

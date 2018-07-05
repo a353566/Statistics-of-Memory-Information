@@ -4,7 +4,6 @@
 #include <string.h>
 #include <stdio.h>
 #include <iostream>
-//#include <netcdfcpp.h>
 
 #define PIN_TESTEND_ON_DATAEND
 #define TRAINING_INTERVAL_DAY 21
@@ -15,14 +14,14 @@
 //#define EXPERIMENT_debug_oomAdj_less_than_0
 //#define EXPERIMENT_debug_oomAdj_rate_onEachApp
 //#define EXPERIMENT_debug_oomAdj_statistics
-//#define EXPERIMENT_debug_Print_Event
+//#define EXPERIMENT_debug_Print_Event  // point AppName out
 //#define EXPERIMENT_debug_IntervalTime
 
 // ----- experiment part -----
 #define EXPERIMENT_GSP_normal_part
 //#define EXPERIMENT_GSP_const_level_part
 //#define EXPERIMENT_GSP_multiply_of_level_part
-#define EXPERIMENT_GSP_power_of_level_part
+//#define EXPERIMENT_GSP_power_of_level_part
 //#define EXPERIMENT_LRU_part
 //#define EXPERIMENT_MFU_part
 
@@ -757,7 +756,7 @@ class DataMining {
       DMEPtoEvent.push_back(screen_long_off);
       EPscreen_long_off = DMEPtoEvent.size()-1;//}
 
-			// 輸出 point to AppName
+			// point AppName out
 #ifdef EXPERIMENT_debug_Print_Event
 			for (int i=0; i<DMEPtoEvent.size(); i++)
 				cout << i << "\t:" << DMEPtoEvent[i] <<endl;
@@ -814,7 +813,6 @@ class DataMining {
 				//{ predict
 				for (int i=maxBackApp; i<testDMEventPoint.size()-1; i++) {
 					Sequence shortSeq = buildShortSequence(i, maxBackApp, &testDMEventPoint);
-					
 					// 預測和記錄
 					PredictResult result = gspPredict.predictResult_normal(&shortSeq, maxPredictApp);
 					int predictNum = result.predict(testDMEventPoint.at(i+1), maxPredictApp); // (ps: reallyUseApp, maxPredictApp)
@@ -984,8 +982,8 @@ class DataMining {
 				printExperiment powerPrint(maxPredictApp);
 				//{ parameter initial | method: weight = base + powerNum ^ level(0~n)
 				double base = 1;
-				double powerNum = 100;
-				double powerNumMax = 500;
+				double powerNum = 900;
+				double powerNumMax = 900;
 				double powerGrow = 1;//}
 				
 				for (powerNum; powerNum <= powerNumMax; powerNum+=powerGrow) {
