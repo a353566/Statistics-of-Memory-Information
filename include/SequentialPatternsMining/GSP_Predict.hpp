@@ -3,12 +3,13 @@
 
 #include <vector>
 #include <iostream>
+#include <complex>
 
 #include "../Sequence.hpp"
 #include "../PredictResult.hpp"
 #include "GSP.hpp"
 
-//#define GSP_PREDICT_HPP_debug_output_countAppMap
+//#define GSP_PREDICT_HPP_debug_output_countAppMap // 輸出 countAppMap 排序結果
 
 using namespace std;
 
@@ -160,25 +161,40 @@ class GSP_Predict {
 			return result;
 		};
 		
-		/** 取得預測的 APPs
-		 *  (specialLevel) 指定此 level，並依序 count 排序輸出
+		/** 取得預測的 APPs 根據不同方法
+		 *  method : 計算的方法
+		 *  parameter : 不同方法參數不一樣
 		 *  usePatn(use Pattern) : 目前使用的 APP Pattern
 		 *  maxPredictApp : 總共要預測幾個 APP
 		 *  return : 預測的結果，不夠 maxPredictApp 數量的話用 (NO_APP, NO_WEIGHT) 補足 (ps:in PredictResult)
 		 */
-		PredictResult predictResult_specialLevel(Sequence *usePatn, int level, int maxPredictApp) {
+		const static int ConstLevel = 1;
+		const static int multiplyOfLevle = 2;
+		const static int powerOfLevel = 3;
+		PredictResult predictResult_byMethod(int method, double *parameter, Sequence *usePatn, int maxPredictApp) {
 			// simlPatnsMap(similarPatternsMap) 取得相似的 Pattern
 			map<int, vector<pair<elemType, int> > > simlPatnsMap = findSimilarPattern(usePatn);
-			map<int, int> weightMap = computeWeight_specialLevel(appCountMap, &simlPatnsMap, level);
+			map<int, double> weightMap;
+			
+			// 根據方法不同，取得不同的 weight
+			if (method == ConstLevel) {
+				weightMap = computeWeight_constLevel(appCountMap, &simlPatnsMap, parameter);
+			} else if (method == multiplyOfLevle) {
+				weightMap = computeWeight_multiplyOfLevel(appCountMap, &simlPatnsMap, parameter);
+			} else if (method == powerOfLevel) {
+				weightMap = computeWeight_powerOfLevel(appCountMap, &simlPatnsMap, parameter);
+			} else {
+				printf("GSP_Predict::predictResult_byMethod() No match any methodID, method: %d", method);
+			}
 			
 			// 計算 Total Weight for each app
-			multimap<int ,elemType> weightAppVec = computeTotalWeight_specialLevel(appCountMap, &simlPatnsMap, &weightMap);
+			multimap<double ,elemType> weightAppVec = computeTotalWeight_byLevel(appCountMap, &simlPatnsMap, &weightMap);
 			
 			// 依照 total weight 大小來排序，並寫入 PredictResult
 			PredictResult result;
 			if (!weightAppVec.empty()) {
 				// while 直到有 maxPredictApp 個APP，或數量不夠
-				multimap<int ,elemType>::reverse_iterator oneApp = weightAppVec.rbegin();
+				multimap<double ,elemType>::reverse_iterator oneApp = weightAppVec.rbegin();
 				while (result.size() < maxPredictApp && oneApp != weightAppVec.rend()) {
 					// 檢查是否重複
 					if (!result.checkRepeat(oneApp->second)) {
@@ -191,65 +207,109 @@ class GSP_Predict {
 			// 剩下則給 (NO_APP, NO_WEIGHT) (ps: (app, count))
 			while (result.size() < maxPredictApp) {
 				result.resultPairs.push_back(make_pair(PredictResult::NO_APP, PredictResult::NO_WEIGHT));
-				//result.resultPairs.push_back(make_pair(PredictResult::NO_APP, PredictResult::NO_APP));
 			}
 			return result;
 		};
 		
-		/** 計算 weight
-		 *  (specialLevel) : 指定 level 給定 1 其他給 0
+		/** 計算 level weight (Const Level) : 指定 level 給定 1 其他給 0
 		 *  appCountMap : 各個 APP 的統計數量
 		 *  simlPatnsMap : (similarPatternsMap) 取得相似的 Pattern
-		 *  level : 指定的 level 層給 1
+		 *  parameter[0] : level : 指定的 level 層給 1
 		 *  return : map<level, weight>
-		 *           return a map which recode weight on special level (level)
+		 *           return a map which recode weight on const level (level)
 		 */
-		map<int, int> computeWeight_specialLevel(map<elemType, int> *appCountMap, map<int, vector<pair<elemType, int> > > *simlPatnsMap, int level) {
-			map<int, int> weights;
+		map<int, double> computeWeight_constLevel(map<elemType, int> *appCountMap, map<int, vector<pair<elemType, int> > > *simlPatnsMap, double *parameter) {
+			map<int, double> weights;
+			
+			int level = (int) parameter[0];
+			
 			// 第 0 層
-			if (level == 0) {
-				weights[0] = 1;
-			} else {
-				weights[0] = 0;
-			}
+			weights[0] = (level == 0)? 1:0;
 			
 			// 第 1 層以上
-			for (map<int, vector<pair<elemType, int> > >::iterator iter=simlPatnsMap->begin();
-					 iter!=simlPatnsMap->end(); iter++)
-			{
-				// 指定的 level 層給 1，其他給 0
-			  if (iter->first != level) {
-					weights[iter->first] = 0;
-				} else {
-					weights[iter->first] = 1;
-				}
+			map<int, vector<pair<elemType, int> > >::iterator iter;
+			for (iter=simlPatnsMap->begin(); iter!=simlPatnsMap->end(); iter++) {
+				weights[iter->first] = (iter->first != level)? 0:1;
 			}
 			return weights;
 		}
 		
+		/** 計算 level weight (multiply Of Level) appCount 會隨著 level 提升
+		 *  appCountMap : 各個 APP 的統計數量
+		 *  simlPatnsMap : (similarPatternsMap) 取得相似的 Pattern
+		 *  parameter[0] : base : 常數
+		 *  parameter[1] : multiplyNum : 要乘上的數字
+		 *  return : map<level, weight>
+		 *           return a map which recode weight on each level (level)
+		 */
+		map<int, double> computeWeight_multiplyOfLevel(map<elemType, int> *appCountMap, map<int, vector<pair<elemType, int> > > *simlPatnsMap, double *parameter) {
+			map<int, double> weights;
+			// weight = base + multiplyNum * level(0~n)
+			double base = parameter[0];
+			double multiplyNum = parameter[1];
+			
+			// 第 0 層
+			weights[0] = base + multiplyNum * 0;
+			
+			// 第 1 層以上
+			map<int, vector<pair<elemType, int> > >::iterator iter;
+			for (iter=simlPatnsMap->begin(); iter!=simlPatnsMap->end(); iter++) {
+				weights[iter->first] = base + multiplyNum * iter->first;
+			}
+			
+			return weights;
+		}
+		
+		
+		/** 計算 level weight (power Of Level) appCount 會隨著 level 提升
+		 *  appCountMap : 各個 APP 的統計數量
+		 *  simlPatnsMap : (similarPatternsMap) 取得相似的 Pattern
+		 *  parameter[0] : base : 常數
+		 *  parameter[1] : power : 要多次方的數字
+		 *  return : map<level, weight>
+		 *           return a map which recode weight on each level (level)
+		 */
+		map<int, double> computeWeight_powerOfLevel(map<elemType, int> *appCountMap, map<int, vector<pair<elemType, int> > > *simlPatnsMap, double *parameter) {
+			map<int, double> weights;
+			// weight = base + powerNum ^ level(0~n)
+			double base = parameter[0];
+			double powerNum = parameter[1];
+			
+			// 第 0 層 : (ps: powerNum^0 = 1，但這裡不合理所以給 base 就好)
+			weights[0] = base;
+			
+			// 第 1 層以上
+			map<int, vector<pair<elemType, int> > >::iterator iter;
+			for (iter=simlPatnsMap->begin(); iter!=simlPatnsMap->end(); iter++) {
+				//weights[iter->first] = base + powerNum ^ iter->first;
+				weights[iter->first] = base + pow(powerNum, iter->first);
+			}
+			
+			return weights;
+		}
+		
 		/** 計算 total weight
-		 *  (specialLevel) : 針對 level 做運算
+		 *  (by Level) : 針對 level 做運算
 		 *  appCountMap : 各個 APP 的統計數量
 		 *  simlPatnsMap : (similarPatternsMap) 取得相似的 Pattern
 		 *  weightMap : 各層 level 的 weight 權重
 		 *  return : multimap<TotalWeight ,app>
-		 *           return a map which recode weight on special level (level)
+		 *           return a map which recode weight by level (level)
 		 */
-		multimap<int ,elemType> computeTotalWeight_specialLevel(map<elemType, int> *appCountMap, map<int, vector<pair<elemType, int> > > *simlPatnsMap, map<int, int> *weightMap) {
-			multimap<int ,elemType> weightAppVec;
+		multimap<double ,elemType> computeTotalWeight_byLevel(map<elemType, int> *appCountMap, map<int, vector<pair<elemType, int> > > *simlPatnsMap, map<int, double> *weightMap) {
+			map<elemType ,double> appWeightMap;
 			
 			// 先運算第 0 層 (ps: map<elemType, int> *appCountMap)
 			if (!appCountMap->empty()) {
 				// 在 weightMap 中搜尋是否有此 level(0)
-				map<int, int>::iterator weight = weightMap->find(0);
+				map<int, double>::iterator weight = weightMap->find(0);
 				if (weight != weightMap->end()) {
-					int levelWeight = weight->second;
 					for (map<elemType, int>::iterator oneApp = appCountMap->begin();
 							 oneApp != appCountMap->end(); oneApp++)
 					{
-						int TotalWeight = oneApp->second * levelWeight;
-						if (TotalWeight != 0) { // 不是 0 的話就加入到 weightAppVec
-							weightAppVec.insert(make_pair(TotalWeight, oneApp->first));
+						double TotalWeight = oneApp->second * weight->second; // (ps: count * weight)
+						if (TotalWeight != 0) { // 不是 0 的話就加入到 appWeightMap
+							appWeightMap[oneApp->first] += TotalWeight;
 						}
 					}
 				}
@@ -261,22 +321,28 @@ class GSP_Predict {
 						 simlPatns != simlPatnsMap->end(); simlPatns++)
 				{
 					// 在 weightMap 中搜尋是否有此 level(simlPatns->first)
-					map<int, int>::iterator weight = weightMap->find(simlPatns->first);
+					map<int, double>::iterator weight = weightMap->find(simlPatns->first);
 					if (weight != weightMap->end()) {
-						int levelWeight = weight->second;
 						for (vector<pair<elemType, int> >::iterator oneApp = simlPatns->second.begin();
 								 oneApp != simlPatns->second.end(); oneApp++)
 						{
-							int TotalWeight = oneApp->second * levelWeight;
-							if (TotalWeight != 0) { // 不是 0 的話就加入到 weightAppVec
-								weightAppVec.insert(make_pair(TotalWeight, oneApp->first));
+							double TotalWeight = oneApp->second * weight->second; // (ps: count * weight)
+							if (TotalWeight != 0) { // 不是 0 的話就加入到 appWeightMap
+								appWeightMap[oneApp->first] += TotalWeight;
 							}
 						}
 					}
 				}
 			}
 			
-			return weightAppVec;
+			// 最後放到 weightAppMap & sort
+			multimap<double ,elemType> weightAppMap;
+			for (map<elemType ,double>::iterator oneApp = appWeightMap.begin();
+					 oneApp != appWeightMap.end(); oneApp++)
+			{
+				weightAppMap.insert(make_pair(oneApp->second, oneApp->first));
+			}
+			return weightAppMap;
 		}
 		
 		/** 取得最長，再來是最多的那一個 app

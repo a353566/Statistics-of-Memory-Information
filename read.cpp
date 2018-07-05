@@ -7,16 +7,24 @@
 //#include <netcdfcpp.h>
 
 #define PIN_TESTEND_ON_DATAEND
-#define TRAINING_INTERVAL_DAY 63
+#define TRAINING_INTERVAL_DAY 21
 #define TEST_INTERVAL_DAY 7
 
 //#define EXPERIMENT_debug_addOom_adjStat
 
 //#define EXPERIMENT_debug_oomAdj_less_than_0
 //#define EXPERIMENT_debug_oomAdj_rate_onEachApp
-#define EXPERIMENT_debug_oomAdj_statistics
+//#define EXPERIMENT_debug_oomAdj_statistics
 //#define EXPERIMENT_debug_Print_Event
 //#define EXPERIMENT_debug_IntervalTime
+
+// ----- experiment part -----
+#define EXPERIMENT_GSP_normal_part
+//#define EXPERIMENT_GSP_const_level_part
+//#define EXPERIMENT_GSP_multiply_of_level_part
+#define EXPERIMENT_GSP_power_of_level_part
+//#define EXPERIMENT_LRU_part
+//#define EXPERIMENT_MFU_part
 
 #include "include/DateTime.hpp"
 #include "include/StringToNumber.hpp"
@@ -54,7 +62,7 @@ class Event {
     /** 將重複的 app 刪掉
 		 *  if appear : 1st 保留 oom_score 比較小的
 		 *              2nd 保留 appPid 比較小的
-		 *  出發點 : 因為 Cytus 會有兩個，所以要特別刪掉一個
+		 *  起因 : 因為 Cytus 會有兩個，所以要特別刪掉一個
 		 */
     bool sortOut() {
       bool dataGood = true;
@@ -236,16 +244,17 @@ class CollectionAllData {
 			
       // 看 oom_adj 有沒有 0 以下的數值
 #ifdef EXPERIMENT_debug_oomAdj_less_than_0
-			bool isHave = false;
-			for (int i=0; i<allAppDetailVec.size(); i++) {
-				for (int j=-20; j<0; j++) {
-					if (allAppDetailVec[i].getOom_adjStat(j)!=0) {
-						if (!isHave) {
-							cout << "    =============== oom_adj <0 ================" <<endl;
-							cout << "   i  oom_adj  Times  Name " <<endl;
-							isHave = true;
+			{ bool isHave = false;
+				for (int i=0; i<allAppDetailVec.size(); i++) {
+					for (int j=-20; j<0; j++) {
+						if (allAppDetailVec[i].getOom_adjStat(j)!=0) {
+							if (!isHave) {
+								cout << "    =============== oom_adj <0 ================" <<endl;
+								cout << "   i  oom_adj  Times  Name " <<endl;
+								isHave = true;
+							}
+							printf("%4d %8d  %5d  %s\n", i, j, allAppDetailVec[i].getOom_adjStat(j), allAppDetailVec[i].appName.c_str());
 						}
-						printf("%4d %8d  %5d  %s\n", i, j, allAppDetailVec[i].getOom_adjStat(j), allAppDetailVec[i].appName.c_str());
 					}
 				}
 			}
@@ -260,8 +269,7 @@ class CollectionAllData {
 			 *   app name
 			 */
 #ifdef EXPERIMENT_debug_oomAdj_rate_onEachApp
-      {
-        cout << "    ============== 0 <= oom_adj ==============" <<endl;
+      { cout << "    ============== 0 <= oom_adj ==============" <<endl;
         printf("  i findRate(%%)");
         for (int j=0; j<=16; j++) {
           printf(" %2d ", j);
@@ -343,7 +351,6 @@ class CollectionAllData {
 		 *  unneededAppArray : 不會用到的 APP 陣列
 		 */
     void makeAllEventVec(bool *unneededAppArray) {
-			int scoreExperiment[1001] = {0}; //(mason)
       int AppsChangeTimes = 0;	// Point 前後 apps 改變次數
       //{ 檢查前後兩個 Point (currPoint, nextPoint) 中 apps 的變化
 			vector<Point>::iterator currPoint = allPatternVec.begin();
@@ -355,7 +362,6 @@ class CollectionAllData {
 				 *   3. other
 				 */
 				//{ initial
-				vector<Point>::iterator thisPoint = currPoint; // (mason) out
         Point::App *currApps = currPoint->apps;
         int currAppsNum = currPoint->appNum;
         Point::App *nextApps = nextPoint->apps;
@@ -395,9 +401,6 @@ class CollectionAllData {
 					Point::App *currApp = currPoint->getAppWithIndex(pairIter->first);
 					Point::App *nextApp = nextPoint->getAppWithIndex(pairIter->second);
 					if (currApp->oom_adj != nextApp->oom_adj && nextApp->oom_adj == 0) {
-						// if (0<=nextApp->oom_score && nextApp->oom_score<=1000)
-							// scoreExperiment[nextApp->oom_score]++;
-						
 						isOom_adjCgToZero = true;
 						Event::Case newCase;  // 收集 case
 						newCase.namePoint = currApp->namePoint;
@@ -439,13 +442,13 @@ class CollectionAllData {
 				}//}
 				
 				//  ----- 4. screen status change
-				isScreenChange = (thisPoint->screen != nextPoint->screen);	
+				isScreenChange = (currPoint->screen != nextPoint->screen);	
 				
 				//{ final 有上述改變的話則記錄
         if (isOom_adjCgToZero || isCreatNewApp || isScreenChange) { // 看 oom_adj 有沒有變成0 或是有新開的APP 以及螢幕是否有改變
-          analysisEvent.thisDate = &thisPoint->date;
+          analysisEvent.thisDate = &currPoint->date;
           analysisEvent.nextDate = &nextPoint->date;
-          analysisEvent.isThisScreenOn = thisPoint->screen;
+          analysisEvent.isThisScreenOn = currPoint->screen;
           analysisEvent.isNextScreenOn = nextPoint->screen;
           allEventVec.push_back(analysisEvent);
         }//}
@@ -472,13 +475,6 @@ class CollectionAllData {
 				allEventVec.at(i).sortOut();
 			}//}
       
-			// (mason) score 
-			/*for (int i=0; i<1001; i++) {
-				if (scoreExperiment[i]>0) {
-					printf("%5d | %d\n", i, scoreExperiment[i]);
-				}
-			}*/
-			
       // 輸出 each oom_adj 統計
 #ifdef EXPERIMENT_debug_oomAdj_statistics
 			cout << "    ================= oom_adj =================" <<endl;
@@ -624,6 +620,116 @@ class DataMining {
     vector<int> trainingDMEventPoint;
     vector<int> testDMEventPoint;
     vector<string> DMEPtoEvent; // Data Mining Each Point to Event
+		
+		// 將結果印出，主要是避開輸出重複的資料
+		class printExperiment {
+			public :
+				string preStr;
+				int *successTimes;
+				int failedTimes;
+				int maxPredictApp;
+				bool printTitle;
+				printExperiment(int maxPredictApp) {
+					this->maxPredictApp = maxPredictApp;
+					successTimes = new int[maxPredictApp];
+					initial();
+				}
+				
+				void initial() {
+					preStr.clear();
+					failedTimes = 0;
+					for (int i=0; i<maxPredictApp; i++)
+						successTimes[i] = 0;
+				}
+				
+				/** 將結果印出 只印出有改變的兩段資訊
+				 *  1. 檢查有沒有變化
+				 *  1.true  : 有則輸出，並記錄 newSuccessTimes、newFailedTimes 到自己的資料
+				 *  1.false : preStr <= newPreStr
+				 *  參數同上 (printExperiment)
+				 *   | successTimes : 成功的次數，可以往後讀 maxPredictApp 個
+				 *   | failedTimes : 往回 maxPredictApp 個都沒有命中
+				 */
+				void printImportant(int *newSuccessTimes, int newFailedTimes, string *newPreStr) {
+					// 1. 檢查有沒有變化
+					bool change = false;
+					if (failedTimes != newFailedTimes) {
+						change = true;
+					} else {
+						for (int i=0; i<maxPredictApp; i++) {
+							if (successTimes[i] != newSuccessTimes[i]) {
+								change = true;
+								break;
+							}
+						}
+					}
+					
+				  // 1.true  : 有則輸出，並記錄 newSuccessTimes、newFailedTimes 到自己的資料
+					if (change) {
+						// print last point before check this data isn't print
+						if (!preStr.empty()) {
+							print(&preStr);
+							preStr.clear();
+						}
+						
+						// print new point before push data to this object
+						failedTimes = newFailedTimes;
+						for (int i=0; i<maxPredictApp; i++) {
+							successTimes[i] = newSuccessTimes[i];
+						}
+						print(newPreStr);
+					} else {
+						// 1.false : preStr <= newPreStr
+						preStr = *newPreStr;
+					}
+				}
+				
+				/** 將結果印出
+				 *  主要是將數值丟到 static print 那裡
+				 */
+				void print(string *str) {
+					cout << *str;
+					print(successTimes, failedTimes, maxPredictApp, false);
+				}
+				
+				/** 主要是印出最後的資料
+				 */
+				void finalPrint() {
+					// check this data isn't print
+					if (!preStr.empty()) {
+						print(&preStr);
+						preStr.clear();
+					}
+				}
+				
+				/** (static) 將結果印出
+				 *  successTimes : 成功的次數，可以往後讀 maxPredictApp 個
+				 *  failedTimes : 往回 maxPredictApp 個都沒有命中
+				 *  maxPredictApp : 總共預測幾個
+				 */
+				static void print(int *successTimes, int failedTimes, int maxPredictApp, bool printTitle) {
+					if (printTitle) {
+						cout << "                             predict App Num & predict rate                             |" <<endl;
+						cout << " 1 app  |  2 app  |  3 app  |  4 app  |  5 app  |  6 app  |  7 app  |  8 app  |  9 app  |" <<endl;
+					}
+					
+					// 算全部 totalTimes
+					int totalTimes = failedTimes;
+					for (int i=0; i<maxPredictApp; i++) {
+						totalTimes += successTimes[i];
+					}
+					// print
+					for (int i=0; i<maxPredictApp; i++) {
+						int outputST = 0;
+						for (int j=0; j<i+1; j++) {
+							outputST += successTimes[j];
+						}
+						printf("%1.5f | ", (double)outputST/totalTimes);
+					}
+					cout<<endl;
+				}
+		};
+		
     DataMining() {
       screen_turn_on = string("screen turn on");
       screen_turn_off = string("screen turn off");
@@ -638,9 +744,8 @@ class DataMining {
 			// check screen state
 			checkScreenState(eventVec);
 			
-      // 先將 app 一一列好
-      // ----- initial
-      // 先放 app name
+      //{ ----- initial
+      // 放 app name & screen status
       for (int i=0; i<allAppNameVec->size(); i++) {
         DMEPtoEvent.push_back(allAppNameVec->at(i));
       }
@@ -650,7 +755,7 @@ class DataMining {
       DMEPtoEvent.push_back(screen_turn_off);
       EPscreen_turn_off = DMEPtoEvent.size()-1;
       DMEPtoEvent.push_back(screen_long_off);
-      EPscreen_long_off = DMEPtoEvent.size()-1;
+      EPscreen_long_off = DMEPtoEvent.size()-1;//}
 
 			// 輸出 point to AppName
 #ifdef EXPERIMENT_debug_Print_Event
@@ -658,10 +763,10 @@ class DataMining {
 				cout << i << "\t:" << DMEPtoEvent[i] <<endl;
 #endif
 			
-			// screenPattern : 主要是將 screen 亮著的區間做間隔
+			//{ screenPattern : 主要是將 screen 亮著的區間做間隔
       vector<pair<int, int> > screenPattern;
       buildScreenPattern(&screenPattern, eventVec);
-			cout << "Screen on->off interval have (" << screenPattern.size() << ") times" <<endl;
+			cout << "Screen on->off interval have (" << screenPattern.size() << ") times" <<endl;//}
 			
 			/** 將 screenPattern 用時間分成 training test 兩份
 			 *  讓 eventVec 可以直接分成兩個資料
@@ -670,11 +775,10 @@ class DataMining {
 			 */
 			buildData(&screenPattern, eventVec);
 			
-			//return false;
 			// remove the same action
 			removeSameAction();
 			
-      // ----- sequential patterns mining
+      //{ ----- sequential patterns mining
 			//int min_support = trainingDMEventPoint.size()/200; // (0.5%)
 			int min_support = 2;
       GSP gsp(trainingDMEventPoint, min_support);
@@ -683,57 +787,63 @@ class DataMining {
 			filterVec.push_back(EPscreen_turn_on);
 			filterVec.push_back(EPscreen_turn_off);
 			//filterVec.push_back(EPscreen_long_off);
-			gsp.Filter(&filterVec);
-			//gsp.OutputAll();
-			//gsp.OutpurAllTop();
+			gsp.Filter(&filterVec);//}
 			
-			// ElemStatsTree 實作機率與統計部分
+			//{ output GSP statistics
+			//gsp.OutputAll();
+			//gsp.OutpurAllTop();//}
+			
+			// ----- ElemStatsTree 實作機率與統計部分
+			//{ initial - test data
 			GSP_Predict gspPredict(&gsp);
-			// test data experiment
 			const int maxBackApp = 9;
 			const int maxPredictApp = 9;
 			int failedTimes;
 			int successTimes[maxPredictApp];
+			cout<<endl;//}
+			
 			// GSP normal Algorithm
-			{
-				// initial
+#ifdef EXPERIMENT_GSP_normal_part
+			{ cout << " ----- GSP normal predict:" <<endl;
+				//{ initial
 				failedTimes = 0;
 				for (int i=0; i<maxPredictApp; i++) {
 					successTimes[i] = 0;
-				}
+				}//}
 				
-				// predict
+				//{ predict
 				for (int i=maxBackApp; i<testDMEventPoint.size()-1; i++) {
 					Sequence shortSeq = buildShortSequence(i, maxBackApp, &testDMEventPoint);
 					
-					// 預測和判斷是否成功
+					// 預測和記錄
 					PredictResult result = gspPredict.predictResult_normal(&shortSeq, maxPredictApp);
-					int reallyUseApp = testDMEventPoint.at(i+1);
-					for (int j=0; j<maxPredictApp; j++) {
-						if (result.resultPairs.at(j).first == reallyUseApp) {
-							successTimes[j]++;
-							break;
-						} else if (j == maxPredictApp-1) {
-							failedTimes++;
-						}
+					int predictNum = result.predict(testDMEventPoint.at(i+1), maxPredictApp); // (ps: reallyUseApp, maxPredictApp)
+					if (predictNum == PredictResult::PREDICT_MISS) {
+						failedTimes++;
+					} else {
+						successTimes[predictNum-1]++;
 					}
-				}
+				}//}
 				
-				// output
-				cout << "GSP normal predict rate: " <<endl;
-				printExperiment(successTimes, failedTimes, maxPredictApp);
+				//{ output
+				printExperiment::print(successTimes, failedTimes, maxPredictApp, true);
+				cout<<endl;//}
 			}
+#endif
 			
-			// GSP special level Algorithm
-			{
-				// initial
+			// GSP const level Algorithm
+#ifdef EXPERIMENT_GSP_const_level_part
+			{ cout << " ----- GSP const level predict:" <<endl;
+				cout << "peep | Total   |         |                            predict rate on difference Level                             |" <<endl;
+				cout << " App | pattern |   MFU   | Level 1 | Level 2 | Level 3 | Level 4 | Level 5 | Level 6 | Level 7 | Level 8 | Level 9 |" <<endl;
+				//{ initial
 				const int maxPredictAppforSL = 1;
 				failedTimes = 0;
 				for (int i=0; i<maxPredictAppforSL; i++) {
 					successTimes[i] = 0;
-				}
+				}//}
 				
-				// 建立預測結果表格 (which sequence, level)
+				//{ 建立預測結果表格 (which sequence, level)
 				const int EMPTY = 0;
 				const int PREDICT_FAIL = -1;
 				const int PREDICT_HEAD = 1; // 後面加幾代表第幾個才預測到
@@ -742,17 +852,18 @@ class DataMining {
 					for (int j=0; j<maxBackApp; j++) {
 						predictLevelMap[i][j] = EMPTY;
 					}
-				}
+				}//}
 				
-				// predict
-				// 建立結果表格
+				//{ predict & 建立結果表格
 				for (int i=maxBackApp; i<testDMEventPoint.size()-1; i++) {
 					Sequence shortSeq = buildShortSequence(i, maxBackApp, &testDMEventPoint);
 					int reallyUseApp = testDMEventPoint.at(i+1);
 					
 					// 預測和判斷是否成功
 					for (int level=0; level<maxBackApp; level++) {
-						PredictResult result = gspPredict.predictResult_specialLevel(&shortSeq, level, maxPredictAppforSL);
+						double parameter[1];
+						parameter[0] = level;
+						PredictResult result = gspPredict.predictResult_byMethod(GSP_Predict::ConstLevel, parameter, &shortSeq, maxPredictAppforSL);
 						
 						// 檢查確實有結果才繼續，否則跳出換下一個
 						if (result.resultPairs.at(0).first != PredictResult::NO_APP) {
@@ -765,20 +876,18 @@ class DataMining {
 							break;
 						}
 					}
-				}
+				}//}
 				
-				cout << "GSP special level predict rate: " <<endl;
-				// 統計表格 difference level effect
-				// 從 level 0 開始找
+				//{ 統計表格 difference level effect & output
 				for (int level=0; level<maxBackApp; level++) {
-					// initial
+					//{ initial
 					for (int i=0; i<maxPredictApp; i++) {
 						successTimes[i] = 0;
 					}
-					failedTimes = 0;
 					vector<int> catchSeqVec; // 知道有哪些是有搜尋到的內容
+					failedTimes = 0; //}
 					
-					// 先找自己這層有多少個
+					//{ 先找自己這層有多少個 & 沒有則跳出
 					for (int i=0; i<testDMEventPoint.size(); i++) {
 						if (predictLevelMap[i][level] != EMPTY) {
 							catchSeqVec.push_back(i);
@@ -791,13 +900,11 @@ class DataMining {
 							continue;
 						}
 					}
-					
-					// 都沒有東西就跳出吧
 					if (catchSeqVec.empty()) {
 						break;
-					}
+					}//}
 					
-					// 之後往下搜尋
+					//{ 之後往下搜尋
 					for (int downLevel = level-1; 0<=downLevel; downLevel--) {
 						for (vector<int>::iterator seqHead = catchSeqVec.begin(); 
 								 seqHead != catchSeqVec.end(); seqHead++)
@@ -808,77 +915,176 @@ class DataMining {
 								failedTimes++;
 							}
 						}
-					}
+					}//}
 					
-					// output
-					cout << "----- level: " << level << " total: " << catchSeqVec.size() <<endl;
-					for (int downLevel = level; 0<=downLevel; downLevel--) {
-						cout << "L" << downLevel;
-						cout << " predict rate: " << (double)successTimes[downLevel]/catchSeqVec.size() <<endl;
+					//{ output
+					int totalPattern = catchSeqVec.size();
+					printf("%4d | %7d | ", level, totalPattern);
+					for (int i = 0; i<=level; i++) {
+						printf("%1.5f | ", (double)successTimes[i]/totalPattern);
 					}
+					cout<<endl;//}
 				}
-				cout <<endl;
+				cout <<endl;//}
 			}
+#endif
+			
+			// GSP multiply of level Algorithm
+#ifdef EXPERIMENT_GSP_multiply_of_level_part
+			{ cout << " ----- GSP multiply predict rate:" <<endl;
+				cout << "base | multiply |                             predict App Num & predict rate                              |" <<endl;
+				cout << "     |     Num |  1 app  |  2 app  |  3 app  |  4 app  |  5 app  |  6 app  |  7 app  |  8 app  |  9 app  |" <<endl;
+				printExperiment multiplyPrint(maxPredictApp);
+				//{ parameter initial | method: weight = base + multiplyNum * level(0~n)
+				double base = 1;
+				double multiplyNum = 0;
+				double multiplyNumMax = 100;
+				double multiplyGrow = 0.01;//}
+				
+				for (multiplyNum; multiplyNum <= multiplyNumMax; multiplyNum+=multiplyGrow) {
+					//{ initial
+					failedTimes = 0;
+					for (int i=0; i<maxPredictApp; i++) {
+						successTimes[i] = 0;
+					}//}
+					
+					//{ predict
+					double parameter[2];
+					parameter[0] = base;
+					parameter[1] = multiplyNum;
+					for (int i=maxBackApp; i<testDMEventPoint.size()-1; i++) {
+						Sequence shortSeq = buildShortSequence(i, maxBackApp, &testDMEventPoint);
+						
+						// 預測和記錄
+						PredictResult result = gspPredict.predictResult_byMethod(GSP_Predict::multiplyOfLevle, parameter, &shortSeq, maxPredictApp);
+						int predictNum = result.predict(testDMEventPoint.at(i+1), maxPredictApp); // (ps: reallyUseApp, maxPredictApp)
+						if (predictNum == PredictResult::PREDICT_MISS) {
+							failedTimes++;
+						} else {
+							successTimes[predictNum-1]++;
+						}
+					}//}
+					
+					//{ output
+					char outChar[64];
+					snprintf(outChar, 64, "%.2f | %.5f | ", base, multiplyNum);
+					string str = string(outChar);
+					multiplyPrint.printImportant(successTimes, failedTimes, &str);//}
+				}
+				multiplyPrint.finalPrint();
+				cout<<endl;
+			}
+#endif
+			
+			// GSP power of level Algorithm
+#ifdef EXPERIMENT_GSP_power_of_level_part
+			{ cout << " ----- GSP power predict rate:" <<endl;
+				cout << "base |   power |                             predict App Num & predict rate                              |" <<endl;
+				cout << "     |     Num |  1 app  |  2 app  |  3 app  |  4 app  |  5 app  |  6 app  |  7 app  |  8 app  |  9 app  |" <<endl;
+				printExperiment powerPrint(maxPredictApp);
+				//{ parameter initial | method: weight = base + powerNum ^ level(0~n)
+				double base = 1;
+				double powerNum = 100;
+				double powerNumMax = 500;
+				double powerGrow = 1;//}
+				
+				for (powerNum; powerNum <= powerNumMax; powerNum+=powerGrow) {
+					//{ initial
+					failedTimes = 0;
+					for (int i=0; i<maxPredictApp; i++) {
+						successTimes[i] = 0;
+					}//}
+					
+					//{ predict
+					double parameter[2];
+					parameter[0] = base;
+					parameter[1] = powerNum;
+					for (int i=maxBackApp; i<testDMEventPoint.size()-1; i++) {
+						Sequence shortSeq = buildShortSequence(i, maxBackApp, &testDMEventPoint);
+						
+						// 預測和記錄
+						PredictResult result = gspPredict.predictResult_byMethod(GSP_Predict::powerOfLevel, parameter, &shortSeq, maxPredictApp);
+						int predictNum = result.predict(testDMEventPoint.at(i+1), maxPredictApp); // (ps: reallyUseApp, maxPredictApp)
+						if (predictNum == PredictResult::PREDICT_MISS) {
+							failedTimes++;
+						} else {
+							successTimes[predictNum-1]++;
+						}
+					}//}
+					
+					//{ output
+					char outChar[64];
+					snprintf(outChar, 64, "%.2f | %.5f | ", base, powerNum);
+					string str = string(outChar);
+					powerPrint.printImportant(successTimes, failedTimes, &str);//}
+				}
+				powerPrint.finalPrint();
+				cout<<endl;
+			}
+#endif
 			
 			// LRU
-			{
-				// initial
+#ifdef EXPERIMENT_LRU_part
+			{ cout << " ----- LRU predict:" <<endl;
+				//{ initial
 				failedTimes = 0;
 				for (int i=0; i<maxPredictApp; i++) {
 					successTimes[i] = 0;
-				}
+				}//}
 				
-				// predict
+				//{ predict
 				for (int i=maxBackApp; i<testDMEventPoint.size()-1; i++) {
 					int reallyUseApp = testDMEventPoint.at(i+1);
 					for (int j=1; j<maxBackApp+1 && j<maxPredictApp+1; j++) {
 						if (testDMEventPoint.at(i-j) == reallyUseApp) {
-							//cout << "predict:" << testDMEventPoint.at(i-1) << " use:" << testDMEventPoint.at(i+1) << " success" <<endl;
 							successTimes[j-1]++;
 							break;
 						} else if (j == maxBackApp || j == maxPredictApp) {
 							failedTimes++;
 						}
 					}
-				}
+				}//}
 				
-				// output
-				cout << "LRU predict rate: " <<endl;
-				printExperiment(successTimes, failedTimes, maxPredictApp);
+				//{ output
+				printExperiment::print(successTimes, failedTimes, maxPredictApp, true);
+				cout<<endl;//}
 			}
+#endif
 			
 			// MFU
-			{
-				// initial
+#ifdef EXPERIMENT_MFU_part
+			{ cout << " ----- MFU predict:" <<endl;
+				//{ initial
 				failedTimes = 0;
 				for (int i=0; i<maxPredictApp; i++) {
 					successTimes[i] = 0;
-				}
+				}//}
 				
-				// 整理 sequence
+				//{ 整理 sequence
 				Sequence shortSeq;
 				Itemset tmpItem;
 				tmpItem.item.push_back(30000);
-				shortSeq.itemset.push_back(tmpItem);
+				shortSeq.itemset.push_back(tmpItem);//}
 				
-				// predict
-				PredictResult result = gspPredict.predictResult_specialLevel(&shortSeq, 0, maxPredictApp);
+				//{ predict
+				double parameter[1];
+				parameter[0]=0;
+				PredictResult result = gspPredict.predictResult_byMethod(GSP_Predict::ConstLevel, parameter, &shortSeq, maxPredictApp);
 				for (int i=maxBackApp; i<testDMEventPoint.size()-1; i++) {
-					int reallyUseApp = testDMEventPoint.at(i+1);
-					for (int j=0; j<maxPredictApp; j++) {
-						if (result.resultPairs.at(j).first == reallyUseApp) {
-							successTimes[j]++;
-							break;
-						} else if (j == maxPredictApp-1) {
-							failedTimes++;
-						}
+					// 預測和記錄
+					int predictNum = result.predict(testDMEventPoint.at(i+1), maxPredictApp); // (ps: reallyUseApp, maxPredictApp)
+					if (predictNum == PredictResult::PREDICT_MISS) {
+						failedTimes++;
+					} else {
+						successTimes[predictNum-1]++;
 					}
-				}
+				}//}
 				
-				// output
-				cout << "MFU predict rate: " <<endl;
-				printExperiment(successTimes, failedTimes, maxPredictApp);
+				//{ output
+				printExperiment::print(successTimes, failedTimes, maxPredictApp, true);
+				cout<<endl;//}
 			}
+#endif
 			
     }
 		
@@ -898,28 +1104,6 @@ class DataMining {
 			return shortSeq;
 		}
 		
-		/** 將結果印出
-		 *  successTimes : 成功的次數，可以往後讀 maxPredictApp 個
-		 *  failedTimes : 往回 maxPredictApp 個都沒有命中
-		 *  maxPredictApp : 總共預測幾個
-		 */
-		void printExperiment(int *successTimes, int failedTimes, int maxPredictApp) {
-			// 算全部 totalTimes
-			int totalTimes = failedTimes;
-			for (int i=0; i<maxPredictApp; i++) {
-				totalTimes += successTimes[i];
-			}
-			// print
-			for (int i=0; i<maxPredictApp; i++) {
-				int outputST = 0;
-				for (int j=0; j<i+1; j++) {
-					outputST += successTimes[j];
-				}
-				cout << "predict app number:" << i+1 << " predict rate:" << (double)outputST/totalTimes <<endl;
-			}
-			cout <<endl;
-		}
-			
 		/** 檢查一下螢幕資料是否有問題 
 		 *  有連續的兩個點連接的螢幕資訊不一樣的話，會出輸警告
 		 */
@@ -1070,11 +1254,11 @@ class DataMining {
 				// ----- 1. check screen, if turn on, record it
 				//trainingDMEventPoint->push_back(EPscreen_turn_on);
 				
-        // ----- 2. record app
+        //{ ----- 2. record app
         for (int EP=useInterval.first; EP<=useInterval.second; EP++) { // PS: EP = EventPoint
           Event* oneshut = &(eventVec->at(EP));
           vector<Event::Case> *caseVec = &(oneshut->caseVec);
-          // 有東西才記錄
+          //{ 有東西才記錄
           if (caseVec->size()!=0) {
             bool app_record[caseVec->size()];
             for (int j=0; j<caseVec->size(); j++) {
@@ -1098,13 +1282,10 @@ class DataMining {
                 cout << "bad" <<endl;
               }
               trainingDMEventPoint->push_back(big_app_name);
-              //cout << big_oom_score << " : " << big_app_name;
-              //cout << "\t" << caseVec->at(j).nextApp->oom_score << " : " << caseVec->at(j).nextApp->namePoint;
-              //cout << endl;
               app_record[big_app_num] = true;
             }
-          }
-        }
+          }//}
+        }//}
 				
 				// ----- 3. check screen, if turn off, record it
 				//trainingDMEventPoint->push_back(EPscreen_turn_off);
@@ -1115,7 +1296,7 @@ class DataMining {
 		 *  以免後面出現使用連續兩個一樣的 APP
 		 */
 		void removeSameAction() {
-			// training
+			//{ training
 			vector<int>::iterator lastIter = trainingDMEventPoint.begin();
 			vector<int>::iterator thisIter = trainingDMEventPoint.begin();
 			thisIter++;
@@ -1128,9 +1309,9 @@ class DataMining {
 					// 一樣的話要刪掉 thisIter
 					thisIter = trainingDMEventPoint.erase(thisIter);
 				}
-			}
+			}//}
 			
-			// test
+			//{ test
 			lastIter = testDMEventPoint.begin();
 			thisIter = testDMEventPoint.begin();
 			thisIter++;
@@ -1143,11 +1324,11 @@ class DataMining {
 					// 一樣的話要刪掉 thisIter
 					thisIter = testDMEventPoint.erase(thisIter);
 				}
-			}
+			}//}
 			
-			// output
+			//{ output
 			cout << "NEW User training action have (" << trainingDMEventPoint.size() << ") times" <<endl;
-			cout << "NEW User test action have (" << testDMEventPoint.size() << ") times" <<endl;
+			cout << "NEW User test action have (" << testDMEventPoint.size() << ") times" <<endl;//}
 		}
 		
 		/** (bug)
