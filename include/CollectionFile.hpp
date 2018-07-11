@@ -85,16 +85,25 @@ class CollectionFile {
   // 一個檔案裡的所有資料 之後會用 CollectionAllData 再整個整合起來
   public :
     string phoneID;
+    string folder;
     string fileName;
     DateTime date;
     list<Point> pattern;
     vector<string> appNameVec;
     
+		CollectionFile() {}
+		
+		CollectionFile(string folder, string fileName) {
+			this->folder = folder;
+			this->fileName = fileName;
+		}
+		
     // 開啟檔案，並開始讀檔
     bool openFileAndRead() {
       //{ 開檔部分
       FILE *file;
-      file = fopen(fileName.c_str(),"r"); // "r" 讀檔而已
+			string path = folder + fileName;
+      file = fopen(path.c_str(),"r"); // "r" 讀檔而已
       if(file == NULL) {
         cout << "open \"" << fileName << "\" File fail" << endl ;
         return false;

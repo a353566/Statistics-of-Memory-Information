@@ -19,7 +19,7 @@
 
 // ----- experiment part -----
 #define EXPERIMENT_GSP_normal_part
-//#define EXPERIMENT_GSP_const_level_part
+#define EXPERIMENT_GSP_const_level_part
 //#define EXPERIMENT_GSP_multiply_of_level_part
 //#define EXPERIMENT_GSP_power_of_level_part
 //#define EXPERIMENT_LRU_part
@@ -780,6 +780,7 @@ class DataMining {
       //{ ----- sequential patterns mining
 			//int min_support = trainingDMEventPoint.size()/200; // (0.5%)
 			int min_support = 2;
+			cout << "min_support: " << min_support <<endl;
       GSP gsp(trainingDMEventPoint, min_support);
       gsp.Mining();
 			vector<int> filterVec;
@@ -931,13 +932,13 @@ class DataMining {
 #ifdef EXPERIMENT_GSP_multiply_of_level_part
 			{ cout << " ----- GSP multiply predict rate:" <<endl;
 				cout << "base | multiply |                             predict App Num & predict rate                              |" <<endl;
-				cout << "     |     Num |  1 app  |  2 app  |  3 app  |  4 app  |  5 app  |  6 app  |  7 app  |  8 app  |  9 app  |" <<endl;
-				printExperiment multiplyPrint(maxPredictApp);
+				cout << "     |      Num |  1 app  |  2 app  |  3 app  |  4 app  |  5 app  |  6 app  |  7 app  |  8 app  |  9 app  |" <<endl;
 				//{ parameter initial | method: weight = base + multiplyNum * level(0~n)
 				double base = 1;
-				double multiplyNum = 0;
-				double multiplyNumMax = 100;
-				double multiplyGrow = 0.01;//}
+				double multiplyNum = 900;
+				double multiplyNumMax = 900;
+				double multiplyGrow = 1;
+				printExperiment multiplyPrint(maxPredictApp);//}
 				
 				for (multiplyNum; multiplyNum <= multiplyNumMax; multiplyNum+=multiplyGrow) {
 					//{ initial
@@ -979,12 +980,12 @@ class DataMining {
 			{ cout << " ----- GSP power predict rate:" <<endl;
 				cout << "base |   power |                             predict App Num & predict rate                              |" <<endl;
 				cout << "     |     Num |  1 app  |  2 app  |  3 app  |  4 app  |  5 app  |  6 app  |  7 app  |  8 app  |  9 app  |" <<endl;
-				printExperiment powerPrint(maxPredictApp);
 				//{ parameter initial | method: weight = base + powerNum ^ level(0~n)
 				double base = 1;
 				double powerNum = 900;
 				double powerNumMax = 900;
-				double powerGrow = 1;//}
+				double powerGrow = 1;
+				printExperiment powerPrint(maxPredictApp);//}
 				
 				for (powerNum; powerNum <= powerNumMax; powerNum+=powerGrow) {
 					//{ initial
@@ -1458,28 +1459,27 @@ class DataMining {
 };
 
 int main(int argc, char** argv) {
-  // 資料夾路徑(絕對位址or相對位址) 目前用現在的位置
-  string dir = (argc == 2) ? string(argv[1]):string(".");
-	
+	//{ ----- initial
   vector<string> files;
   vector<CollectionFile> collecFileVec; // 所有檔案的 vector
   CollectionAllData collecAllData;      // 整理所有資料
   DataMining dataMining;
   // 取出檔案，並判斷有沒有問題
-  if (getdir(dir, files) == -1) {
-    cout << "Error opening" << dir << endl;
+  string folder = (argc == 2) ? string(argv[1]):string(".");	// 資料夾路徑(絕對位址or相對位址) 拿參數給予的目的地
+  if (getdir(folder, files) == -1) {
+    cout << "Error opening" << folder << endl;
     return -1;
-  }
+  }//}
 
   // 整理所有檔案內容
   for(int i=0; i<files.size(); i++) {
-    CollectionFile oneFile;
-    oneFile.fileName = files[i];
-    // 檢查檔案看是不是需要的檔案，像 2017-12-24_03.20.27 就是正確的檔名
-	  if (!oneFile.setAllDateTime()) {
+    CollectionFile oneFile(folder, files[i]);
+    //{ ----- check file name
+		// 檢查檔案看是不是需要的檔案，像 2017-12-24_03.20.27 就是正確的檔名
+	  if (!oneFile.setAllDateTime(files[i])) {
       continue;
-    }
-    oneFile.fileName = dir + oneFile.fileName;
+    }//}
+		
     // 確定沒問題後打開檔案
     if (oneFile.openFileAndRead()) {
       // 檔案資料正確後，放入檔案的 linked list 中
@@ -1510,11 +1510,11 @@ int main(int argc, char** argv) {
   return 0;
 }
 
-int getdir(string dir, vector<string> &files) {
+int getdir(string folder, vector<string> &files) {
   // 創立資料夾指標
   DIR *dp;
   struct dirent *dirp;
-  if((dp = opendir(dir.c_str())) == NULL) {
+  if((dp = opendir(folder.c_str())) == NULL) {
     return -1;
   }
   // 如果dirent指標非空

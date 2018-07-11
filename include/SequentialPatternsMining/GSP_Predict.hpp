@@ -380,7 +380,7 @@ class GSP_Predict {
 				}
 			}//}
 			
-			//{ 3. while
+			//{ 3. 還是兩個以上的話，繼續往下找
 			int level = maxLevel;
 			while (sameCountApp.size() > 1 && --level > 0) {
 				vector<elemType> lastSameCountApp;
@@ -401,7 +401,7 @@ class GSP_Predict {
 					}
 				}//}
 				
-				//{ 3-2. build lastSameCountApp : on Max Level
+				//{ 3-2. build lastSameCountApp : on last Level
 				for (int i=0; i<simlPatns->second.size(); i++) {
 					bool inSameCountApp = false; // 確認有在 sameCountApp 中
 					for (vector<elemType>::iterator iter = sameCountApp.begin(); iter != sameCountApp.end(); iter++) {
