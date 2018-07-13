@@ -1,4 +1,4 @@
-TARGETS = read
+TARGETS = Main
 #RNNLIB = /home/mason/rnnlib/rnn/include/
 #libnetcdf_c++.so = /home/mason/rnnlib/rnn/lib/libnetcdf_c++.so
 # 設定變數 之後用 $(xxx)即可以使用
