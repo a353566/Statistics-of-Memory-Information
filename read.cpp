@@ -16,10 +16,11 @@
 //#define EXPERIMENT_debug_oomAdj_statistics
 //#define EXPERIMENT_debug_Print_Event  // point AppName out
 //#define EXPERIMENT_debug_IntervalTime
+//#define EXPERIMENT_debug_adj_score
 
 // ----- experiment part -----
-#define EXPERIMENT_GSP_normal_part
-#define EXPERIMENT_GSP_const_level_part
+//#define EXPERIMENT_GSP_normal_part
+//#define EXPERIMENT_GSP_const_level_part
 //#define EXPERIMENT_GSP_multiply_of_level_part
 //#define EXPERIMENT_GSP_power_of_level_part
 //#define EXPERIMENT_LRU_part
@@ -115,7 +116,7 @@ class Event {
     }
 };
 
-class CollectionAllData {
+class MergeFile {
   public :
     // 單一APP的詳細資料，主要是用於分析，對NC檔沒有幫助
     class AppDetail {
@@ -162,7 +163,7 @@ class CollectionAllData {
     
     DateTime beginDate;
     DateTime endDate;
-    vector<string> allAppNameVec;       // 用 collecFileVec 的資料收集所有的 app's name
+    vector<string> allAppNameVec;       // 用 collectFileVec 的資料收集所有的 app's name
     vector<Point> allPatternVec;        // 所有 pattern
     vector<AppDetail> allAppDetailVec;  // 所有 app 的詳細資料
     /** allEventVec 主要是放入了 發生過的事件 並依序放好
@@ -170,15 +171,17 @@ class CollectionAllData {
      */
     vector<Event> allEventVec; 
     
-    CollectionAllData() {};
+    MergeFile() {};
     
-    void collection(vector<CollectionFile> *collecFileVec) {
-      //{ 收集所有的 app's name 用來之後編號
-      for (int i=0; i<collecFileVec->size(); i++) {
-        for(list<Point>::iterator oneShot = (*collecFileVec)[i].pattern.begin();
-            oneShot!=(*collecFileVec)[i].pattern.end(); oneShot++) 
+    void collection(vector<CollectionFile> *collectFileVec) {
+			//{ 收集所有的 app's name 用來之後編號
+      for (vector<CollectionFile>::iterator oneCollectFile = collectFileVec->begin();
+					 oneCollectFile != collectFileVec->end(); oneCollectFile++)
+			{
+        for (list<Point>::iterator oneShot = oneCollectFile->pattern.begin();
+						 oneShot != oneCollectFile->pattern.end(); oneShot++) 
         {
-          addonePoint(*oneShot, &(*collecFileVec)[i].appNameVec);
+          addonePoint(*oneShot, &oneCollectFile->appNameVec);
         }
       }//}
 			
@@ -338,7 +341,45 @@ class CollectionAllData {
 				}
 			}
 #endif
-    }
+    
+			// 檢查 oom_score & oom_adj 差異
+#ifdef EXPERIMENT_debug_adj_score
+			int appNameID = -1;
+			//string findName("android.process.media");
+			//string findName("jp.co.hit_point.tabikaeru");
+			//string findName("com.madhead.tos.zh");
+			//string findName("com.nianticlabs.pokemongo");
+			//string findName("com.google.android.apps.translate");
+			string findName("com.facebook.orca:videoplayer");
+			for (int i=0; i<allAppNameVec.size(); i++) {
+				if (allAppNameVec[i].compare(0, findName.size(), findName) == 0) {
+					appNameID = i;
+					break;
+				}
+			}
+			
+			if (appNameID == -1) {
+				cout << "(error) check part::oom_score & oom_adj: Can't find check App Name!!!" <<endl;
+			} else {
+				cout << "Find out!! " << appNameID << ":" << allAppNameVec[appNameID] <<endl;
+				// 有找到則輸出所有的 oom_adj & oom_score
+				bool isFind = false;
+				for (vector<Point>::iterator onePoint = allPatternVec.begin();
+						 onePoint != allPatternVec.end(); onePoint++)
+				{
+					Point::App *checkApp = onePoint->getAppWithNamePoint(appNameID);
+					if (checkApp != NULL) {
+						isFind = true;
+						printf("%3d|%6d\n", checkApp->oom_adj, checkApp->oom_score);
+					} else if (isFind) {
+						isFind = false;
+						cout << "out|out" <<endl;
+					}
+				}
+			}
+#endif
+		
+		}
 		
 		/** 將 allPatternVec 整理後裝到這裡 allEventVec
 		 *  查看 allPatternVec 中 oom_adj 發生改變的狀況
@@ -424,11 +465,9 @@ class CollectionAllData {
         }//}
 				
 				//{ ----- 3. reuse App but pid is difference : analysis Ppairs
-				//map<int, int> SNDPnamePointMap;
 				for (pairIter = Ppairs.begin(); pairIter != Ppairs.end(); pairIter++) {
 					Point::App *currApp = currPoint->getAppWithIndex(pairIter->first);
 					Point::App *nextApp = nextPoint->getAppWithIndex(pairIter->second);
-					//printf("SNDPnamePointMap:%1d: %6d:%3d | %6d:%3d | %3d %s\n", ++SNDPnamePointMap[currApp->namePoint], currApp->pid, currApp->oom_adj, nextApp->pid, nextApp->oom_adj, currApp->namePoint, allAppNameVec[currApp->namePoint].c_str());
 					
 					if (currApp->oom_adj != nextApp->oom_adj && nextApp->oom_adj == 0) {isOom_adjCgToZero = true;
 						Event::Case newCase;  // 收集 case
@@ -1461,8 +1500,8 @@ class DataMining {
 int main(int argc, char** argv) {
 	//{ ----- initial
   vector<string> files;
-  vector<CollectionFile> collecFileVec; // 所有檔案的 vector
-  CollectionAllData collecAllData;      // 整理所有資料
+  vector<CollectionFile> collectFileVec; // 所有檔案的 vector
+  MergeFile mergeFile;      // 整理所有資料
   DataMining dataMining;
   // 取出檔案，並判斷有沒有問題
   string folder = (argc == 2) ? string(argv[1]):string(".");	// 資料夾路徑(絕對位址or相對位址) 拿參數給予的目的地
@@ -1485,26 +1524,26 @@ int main(int argc, char** argv) {
       // 檔案資料正確後，放入檔案的 linked list 中
       // 順便排序
       int ins = 0;
-      for (ins=0; ins<collecFileVec.size(); ins++) {
-        if (collecFileVec[ins] > oneFile)
+      for (ins=0; ins<collectFileVec.size(); ins++) {
+        if (collectFileVec[ins] > oneFile)
           break;
       }
-      collecFileVec.insert(collecFileVec.begin()+ins, oneFile);
+      collectFileVec.insert(collectFileVec.begin()+ins, oneFile);
     } else {
       continue;
     }
   }
   // 檔名依序輸出
-  //for (int i=0; i<collecFileVec.size(); i++)
-  //  collecFileVec[i].date.output();
+  //for (int i=0; i<collectFileVec.size(); i++)
+  //  collectFileVec[i].date.output();
   
   // 輸出數量
-  cout << "收集了多少" << collecFileVec.size() << "檔案" <<endl;
+  cout << "收集了多少" << collectFileVec.size() << "檔案" <<endl;
   
-  // 將檔案給 collecAllData 整理成可讓 dataMining 讀的資料
-  collecAllData.collection(&collecFileVec);
-  // 將 collecAllData 中的 allEventVec appNameVec 給 dataMining 去整理
-  dataMining.mining(&collecAllData.allEventVec, &collecAllData.allAppNameVec);
+  // 將檔案給 mergeFile 整理成可讓 dataMining 讀的資料
+  mergeFile.collection(&collectFileVec);
+  // 將 mergeFile 中的 allEventVec appNameVec 給 dataMining 去整理
+  dataMining.mining(&mergeFile.allEventVec, &mergeFile.allAppNameVec);
   
   cout << "  over" <<endl;
   return 0;

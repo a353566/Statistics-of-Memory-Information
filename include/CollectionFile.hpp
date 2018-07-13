@@ -79,6 +79,15 @@ class Point {
 		App *getAppWithIndex(int index) {
 			return (0<=index && index<appNum)? &(apps[index]) : NULL;
 		}
+		
+		App *getAppWithNamePoint(int namePoint) {
+			for (int i=0; i<appNum; i++) {
+				if (apps[i].namePoint == namePoint) {
+					return &(apps[i]);
+				}
+			}
+			return NULL;
+		}
 };
 
 class CollectionFile {
