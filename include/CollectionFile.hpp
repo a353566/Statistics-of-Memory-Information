@@ -165,7 +165,8 @@ class CollectionFile {
             break;
           }
           if (!thisPoint.getTime(string(getLine))) {
-            cout << "(error) CollectionFile::openFileAndRead() time : " << getLine <<endl;
+            cout << "(error) CollectionFile::openFileAndRead() time: " << getLine <<endl;
+            cout << "        fileName: " << fileName <<endl;
             break;
           }
         } else {
@@ -183,6 +184,7 @@ class CollectionFile {
             isBigScan = false;
           } else {
             cout << "(error) CollectionFile::openFileAndRead() ProcessRecord: " << getLine <<endl;
+						cout << "        fileName: " << fileName <<endl;
             break;
           }
         } else {
@@ -197,6 +199,7 @@ class CollectionFile {
             thisPoint.appNum = tempN;
           } else {
             cout << "(error) CollectionFile::openFileAndRead() procNum: " << getLine <<endl;
+						cout << "        fileName: " << fileName <<endl;
             break;
           }
         } else {
@@ -234,6 +237,7 @@ class CollectionFile {
                 }
               } else {
                 cout << "(error) CollectionFile::openFileAndRead() appName\n" << getLine <<endl;
+								cout << "        fileName: " << fileName <<endl;
                 appDataGood = false;
                 break;
               }//}
@@ -243,10 +247,12 @@ class CollectionFile {
               if (appPid.size()!=0) {
                 if (!StringToNumber(appPid, &tempApp.pid)) {
                   cout << "(error) CollectionFile::openFileAndRead() appPid: " << appPid <<endl;
+									cout << "        fileName: " << fileName <<endl;
                   appDataGood = false;
                 }
               } else {
                 cout << "(error) CollectionFile::openFileAndRead() appPid:NULL \n" << getLine <<endl;
+								cout << "        fileName: " << fileName <<endl;
                 appDataGood = false;
                 break;
               }//}
@@ -265,11 +271,13 @@ class CollectionFile {
                 } else {
                   tempApp.totalPss = Point::App::NULL_DATA;
                   cout << "(error) CollectionFile::openFileAndRead() appTotalPss: " << appTotalPss <<endl;
+									cout << "        fileName: " << fileName <<endl;
                   appDataGood = false;
                 }
               }
             } else {
               cout << "(error) CollectionFile::openFileAndRead() appTotalPss.size():0 getLine:(last line)\n" << getLine <<endl;
+							cout << "        fileName: " << fileName <<endl;
               appDataGood = false;
               break;
             }//}
@@ -280,10 +288,12 @@ class CollectionFile {
               if (!StringToNumber(appOomScore, &tempApp.oom_score)) {
                 tempApp.oom_score = Point::App::NULL_DATA;
                 cout << "(error) CollectionFile::openFileAndRead() appOomScore: " << appOomScore <<endl;
+								cout << "        fileName: " << fileName <<endl;
                 appDataGood = false;
               }
             } else {
               cout << "(error) CollectionFile::openFileAndRead() appOomScore.size():0 getLine:(last line)\n" << getLine <<endl;
+							cout << "        fileName: " << fileName <<endl;
               appDataGood = false;
               break;
             }//}
@@ -294,10 +304,12 @@ class CollectionFile {
               if (!StringToNumber(appGround, &tempApp.ground)) {
                 tempApp.ground = Point::App::NULL_DATA;
                 cout << "(error) CollectionFile::openFileAndRead() appGround: " << appGround <<endl;
-                appDataGood = false;
+                cout << "        fileName: " << fileName <<endl;
+								appDataGood = false;
               }
             } else {
               cout << "(error) CollectionFile::openFileAndRead() appGround.size():0 getLine:(last line)\n" << getLine <<endl;
+							cout << "        fileName: " << fileName <<endl;
               appDataGood = false;
               break;
             }//}
@@ -312,12 +324,14 @@ class CollectionFile {
                 } else {
                   tempApp.oom_adj = Point::App::NULL_DATA;
                   cout << "(error) CollectionFile::openFileAndRead() appOomAdj: " << appTotalPss <<endl;
-                  appDataGood = false;
+                  cout << "        fileName: " << fileName <<endl;
+									appDataGood = false;
                 }
               }
             } else {
               cout << "(error) CollectionFile::openFileAndRead() appOomAdj.size():0 getLine:(last line)\n" << getLine <<endl;
-              appDataGood = false;
+              cout << "        fileName: " << fileName <<endl;
+							appDataGood = false;
               break;
 						}//}
             
@@ -326,7 +340,7 @@ class CollectionFile {
           } else {
 						// 到這邊的話代表 App 數量不對
             cout << "(error) CollectionFile::openFileAndRead() procNum not enough"<<endl;
-            cout << "need " << thisPoint.appNum << " app, but we just get " << getAppNum << " app"<<endl;
+            cout << "        need " << thisPoint.appNum << " app, but we just get " << getAppNum << " app & fileName: " << fileName<<endl;
 						appDataGood = false;
 						thisPoint.appNum = getAppNum;
             break;
@@ -354,6 +368,7 @@ class CollectionFile {
               thisPoint.screen = false;
             } else {
               cout << "(error) CollectionFile::openFileAndRead() Screen:"<< screen <<endl;
+							cout << "        fileName: " << fileName <<endl;
               appDataGood = false;
             }
           } else if (indicate == "Battery") { // ===================== bug
@@ -380,8 +395,8 @@ class CollectionFile {
           } else if (indicate == "scanTime") {
             
           } else { // 都沒有抓出的話
-            cout << "fileName:" << fileName <<endl;
             cout << "(error) CollectionFile::openFileAndRead() indicate:"<< indicate << "fileName:" << fileName << " line:" << line <<endl;
+            cout << "        fileName: " << fileName <<endl;
           }//}
         }
         lastPoint = thisPoint;

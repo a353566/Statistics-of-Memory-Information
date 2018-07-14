@@ -7,7 +7,7 @@
 #include <iostream>
 
 #define PIN_TESTEND_ON_DATAEND
-#define TRAINING_INTERVAL_DAY 21
+#define TRAINING_INTERVAL_DAY 14
 #define TEST_INTERVAL_DAY 7
 
 //#define EXPERIMENT_debug_Print_Event  // point AppName out

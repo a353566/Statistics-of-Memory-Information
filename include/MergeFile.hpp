@@ -7,18 +7,23 @@
 #include <stdio.h>
 #include <iostream>
 
-//#define MERGEFILE_debug_addOom_adjStat
+//#define MERGEFILE_AppDetail_addOom_Stat
+//#define MERGEFILE_debug_oomAdj_statistics
+
+// ----- debug part -----
 //#define MERGEFILE_debug_oomAdj_less_than_0
 //#define MERGEFILE_debug_oomAdj_rate_onEachApp
-//#define MERGEFILE_debug_oomAdj_statistics
+//#define MERGEFILE_debug_adj_score_relation
 //#define MERGEFILE_debug_IntervalTime
-//#define MERGEFILE_debug_adj_score
 
 #include "DateTime.hpp"
 #include "StringToNumber.hpp"
 #include "CollectionFile.hpp"
 using namespace std;
 
+/** Event : record interesting Point
+ *  Now, we record "oom_adj -> 0" and "screen changed" tow thing.
+ */
 class Event {
   public :
     class Case {
@@ -108,7 +113,8 @@ class MergeFile {
         string appName;
         int findTimes;
         double findRate;
-        int oom_adjStat[41]; // 從-20~20 (不過目前只有-17~16)
+        int oom_adjStat[41]; // range is -20~20 (不過目前只有-17~16)
+        int oom_scoreStat[41]; // record 0~24 25~49 51~75 ... 975~999 1000, oom_score/25 oom_score range is 0~1000
         
         AppDetail(string appName) {
           this->appName = appName;
@@ -116,21 +122,23 @@ class MergeFile {
           findRate = 0;
           for (int i=0; i<41; i++) {
             oom_adjStat[i]=0;
+            oom_scoreStat[i]=0;
           }
         };
         
+				// oom_adj
         bool addOom_adjStat(int oom_adj) {
           if ( -17<=oom_adj && oom_adj<=16 ) {
             oom_adjStat[oom_adj+20]++;
             return true;
           } else if ( -20<=oom_adj && oom_adj<=20 ) {
             oom_adjStat[oom_adj+20]++;
-#ifdef MERGEFILE_debug_addOom_adjStat
+#ifdef MERGEFILE_AppDetail_addOom_Stat
             cout << "oom_adj out of value : " << oom_adj << endl;
 #endif
             return true;
           } else {
-#ifdef MERGEFILE_debug_addOom_adjStat
+#ifdef MERGEFILE_AppDetail_addOom_Stat
             cout << "oom_adj out of value : " << oom_adj << endl;
 #endif
             return false;
@@ -143,21 +151,62 @@ class MergeFile {
             return -1;
           }
         };
-    };
+				
+				// oom_score
+        bool addOom_scoreStat(int oom_score) {
+          if ( 0<=oom_score && oom_score<=1000 ) {
+            oom_scoreStat[oom_score/25]++;
+            return true;
+          } else {
+#ifdef MERGEFILE_AppDetail_addOom_Stat
+            cout << "oom_score out of value : " << oom_adj << endl;
+#endif
+            return false;
+          }
+        };
+        int getOom_scoreStat(int oom_score) {
+          if ( 0<=oom_score && oom_score<=1000 ) {
+            return oom_scoreStat[oom_score/25];
+          } else {
+            return -1;
+          }
+        };
+		};
     
     DateTime beginDate;
     DateTime endDate;
+		
     vector<string> allAppNameVec;       // 用 collectFileVec 的資料收集所有的 app's name
     vector<Point> allPatternVec;        // 所有 pattern
     vector<AppDetail> allAppDetailVec;  // 所有 app 的詳細資料
+    /** filterAppName 要被過濾的 APP
+		 *  主要是自己設計的 APP 要被過濾掉
+		 *  在 constructor 中會被加入要被過濾的 APP
+		 */
+		vector<string> filterAppName;
+		
     /** allEventVec 主要是放入了 發生過的事件 並依序放好
      *  其中的 Event 是使用者剛好切換 APP 或是開關螢幕也會知道
      */
-    vector<Event> allEventVec; 
+    vector<Event> allEventVec;
+		
+    MergeFile() {
+			// add filter app name
+			filterAppName.push_back("com.mason.memoryinfo:Record");
+			filterAppName.push_back("com.mason.memoryinfo:Recover");
+			filterAppName.push_back("com.mason.memoryinfo:remote");
+			filterAppName.push_back("com.mason.memoryinfo");
+		}
     
-    MergeFile() {};
-    
-    void collection(vector<CollectionFile> *collectFileVec) {
+		//  ┌----------------┐ 
+		//  | Merge function | 
+		/** └----------------┘ 
+		 *  Merge all collect file(collectFileVec) into this object. 
+		 *  And build allPatternVec & allAppNameVec & allAppDetailVec.
+		 *  
+		 *   collectFileVec : all collect file
+		 */ //{
+		void merge(vector<CollectionFile> *collectFileVec) {
 			//{ 收集所有的 app's name 用來之後編號
       for (vector<CollectionFile>::iterator oneCollectFile = collectFileVec->begin();
 					 oneCollectFile != collectFileVec->end(); oneCollectFile++)
@@ -172,16 +221,21 @@ class MergeFile {
       //{ beginDate, endDate 設定
       beginDate = allPatternVec.front().date;
       endDate = allPatternVec.back().date;//}
-      
-      //{ 從 allPatternVec 中統計 app 的出現次數和 each oom_adj 的次數
-      for (int i=0; i<allAppNameVec.size(); i++) {
-        AppDetail newAppDetail(allAppNameVec[i]); // 放入名字
+			
+      //{ (extra) build allAppDetailVec
+			//從 allPatternVec 中統計 app 的出現次數和 each oom_adj 的次數
+      for (int inspectNameID=0; inspectNameID<allAppNameVec.size(); inspectNameID++) {
+        AppDetail newAppDetail(allAppNameVec[inspectNameID]); // 放入名字
 				// 找所有 allPatternVec::app 中 兩者 point 一樣的 (表示有找到)
-        for (int j=0; j<allPatternVec.size(); j++) {
-          for (int k=0; k<allPatternVec[j].appNum; k++) {
-            if (i==allPatternVec[j].apps[k].namePoint) {
+        for (vector<Point>::iterator onePattern = allPatternVec.begin();
+				     onePattern != allPatternVec.end(); onePattern++)
+				{
+					for (int i=0; i<onePattern->appNum; i++) {
+						Point::App *inspectApp = &onePattern->apps[i];
+            if (inspectNameID == inspectApp->namePoint) {
               newAppDetail.findTimes++;
-              newAppDetail.addOom_adjStat(allPatternVec[j].apps[k].oom_adj);
+              newAppDetail.addOom_adjStat(inspectApp->oom_adj);
+              newAppDetail.addOom_scoreStat(inspectApp->oom_score);
               break;
             }
           }
@@ -189,180 +243,78 @@ class MergeFile {
         newAppDetail.findRate = ((double)newAppDetail.findTimes)/allPatternVec.size();
         allAppDetailVec.push_back(newAppDetail); // 放入 allAppDetailVec
       }//}
-			
+		}
+		
+		/** 加入 oneShot 到 allPatternVec 中，並更改 name index
+		 *  oneShot : 要加入的 Point
+		 *  oneAppNameVec : 舊的名字序列
+		 */
+    void addonePoint(Point oneShot, const vector<string> *oneAppNameVec) {
+      for (int i=0; i<oneShot.appNum; i++) {
+        findAppNameIndex(&oneShot.apps[i], &(*oneAppNameVec)[oneShot.apps[i].namePoint]);
+      }
+      allPatternVec.push_back(oneShot);
+    }
+		
+		/** 回傳 appName 在 allAppNameVec 中是哪一個 index
+		 *  並加到 app 中和回傳
+		 *  app : 要被改寫的 APP
+		 *  appName : app name
+		 *  return : appName's index in allAppNameVec
+		 */
+    int findAppNameIndex(Point::App *app, const string *appName) {
+      // 先檢查 allAppNameVec 中有沒有此名字
+      for (int i=0; i<allAppNameVec.size(); i++) {
+        // 找到後直接回傳新的 namePoint
+        if (*appName == allAppNameVec[i]) {
+          app->namePoint = i;
+          return i;
+        }
+      }
+      
+      // 沒找到則將其加進去，並取得新的 index
+      allAppNameVec.push_back(*appName);
+      app->namePoint = allAppNameVec.size()-1;
+      return app->namePoint;
+		}//}
+		
+		//  ┌------------------------------┐ 
+		//  | Build "allEventVec" function | 
+		/** └------------------------------┘ 
+		 *  Consider "oom_adj" & "screen changed" to Build allEventVec.
+		 */ //{
+    void buildEventVec() {
       /** 有些要跳過的 app & 不需要的直接跳過的 app
 			 *  不需要的有 : oom_adj 沒出現過 0，表示沒有在前景出現過
 			 *               為了收集資料的 app
 			 */ //{
       bool unneededAppArray[allAppDetailVec.size()];
       for (int i=0; i<allAppDetailVec.size(); i++) {
-        // initial
+        // 1. initial
         unneededAppArray[i] = false;
 				
-        // oom_adj 沒出現過 0
+        // 2. oom_adj 沒出現過 0
         if (allAppDetailVec[i].getOom_adjStat(0)==0) {
           unneededAppArray[i] = true;
           continue;
         }
 				
-        // 自己的收集 App
-        int temp = allAppDetailVec[i].appName.find("com.mason.memoryinfo:Record",0);
-        if(0<=temp) {
-          unneededAppArray[i] = true;
-          continue;
-        }
-        temp = allAppDetailVec[i].appName.find("com.mason.memoryinfo:Recover",0);
-        if(0<=temp) {
-          unneededAppArray[i] = true;
-          continue;
-        }
-        temp = allAppDetailVec[i].appName.find("com.mason.memoryinfo:remote",0);
-        if(0<=temp) {
-          unneededAppArray[i] = true;
-          continue;
-        }
-        temp = allAppDetailVec[i].appName.find("com.mason.memoryinfo",0);
-        if(0<=temp) {
-          unneededAppArray[i] = true;
-          continue;
-        }
+				// 3. filter
+				for (vector<string>::iterator filterName = filterAppName.begin();
+				     filterName != filterAppName.end(); filterName++)
+				{
+					int isFind = allAppDetailVec[i].appName.find(*filterName,0);
+					if (0<=isFind) {
+						unneededAppArray[i] = true;
+						break;
+					}
+				}
       }//}
 			
-      // 看 oom_adj 有沒有 0 以下的數值
-#ifdef MERGEFILE_debug_oomAdj_less_than_0
-			{ bool isHave = false;
-				for (int i=0; i<allAppDetailVec.size(); i++) {
-					for (int j=-20; j<0; j++) {
-						if (allAppDetailVec[i].getOom_adjStat(j)!=0) {
-							if (!isHave) {
-								cout << "    =============== oom_adj <0 ================" <<endl;
-								cout << "   i  oom_adj  Times  Name " <<endl;
-								isHave = true;
-							}
-							printf("%4d %8d  %5d  %s\n", i, j, allAppDetailVec[i].getOom_adjStat(j), allAppDetailVec[i].appName.c_str());
-						}
-					}
-				}
-			}
-#endif
-			
-			/**  顯示 each app, oom_adj 零以上的資訊
-			 *   print : i findRate(%)  0   1   2   3   4   5   6   7   8   9  10  11  12  13  14  15  16 (%) App's name
-			 *           0|        49|  0|   |   |   |  1|   |  0| 11|   | 29|   | 41|   |   |   | 18|   |---|android.process.media
-			 *   i : 第幾個 app
-			 *   findRate : 全部 pattern 出現過幾次
-			 *   0~16 : oom_adj 的比例 (佔自己出現過的總比例)
-			 *   app name
-			 */
-#ifdef MERGEFILE_debug_oomAdj_rate_onEachApp
-      { cout << "    ============== 0 <= oom_adj ==============" <<endl;
-        printf("  i findRate(%%)");
-        for (int j=0; j<=16; j++) {
-          printf(" %2d ", j);
-        }
-        cout << "(%) App's name" <<endl;
-        
-        // 主要輸出 app Detail 前面會先有過濾的動作，可以只看到想看到的訊息
-        for (int i=0; i<allAppDetailVec.size(); i++) {
-          if (unneededAppArray[i])  continue; // 略過不需要的 app
-          
-          //{ 用來只找特定的 app
-          //int temp = allAppDetailVec[i].appName.find(":", 0); // 看名字中有沒有 ":"
-          //if (temp<0)  continue;//}
-          
-          printf("%3d|      %4.0f|", i, allAppDetailVec[i].findRate*100);
-          for (int j=0; j<=16; j++) {
-            if (allAppDetailVec[i].getOom_adjStat(j)==0) {
-              printf("   |");
-              continue;
-            }
-            
-            double oom_adjRate = ((double)allAppDetailVec[i].getOom_adjStat(j))/allAppDetailVec[i].findTimes;
-            printf("%3.0lf|", 100*oom_adjRate);
-            if (j==3 && allAppDetailVec[i].getOom_adjStat(j)!=0) {
-              printf("%3d%4f%%", i, allAppDetailVec[i].findRate);
-              cout << " : " << allAppDetailVec[i].appName <<endl;
-            }
-          }
-          cout << "---|" << allAppDetailVec[i].appName <<endl;
-        }
-      }
-#endif
-			
-      // 整理成 allEventVec
+      // ----- important ----- 整理成 allEventVec 
       makeAllEventVec(unneededAppArray);
 			
-			// 觀察間隔時間 超過此時間(maxIntervalTime) 將會顯示
-#ifdef MERGEFILE_debug_IntervalTime
-			DateTime maxIntervalTime;
-			maxIntervalTime.initial();
-			maxIntervalTime.minute = 5;
-			int maxIntervalTimeNum = 0;
-			for (int i=0; i<allEventVec.size(); i++) {
-				DateTime intervalTime = *allEventVec[i].nextDate - *allEventVec[i].thisDate;
-				if (intervalTime>maxIntervalTime) {
-					// 有必要在輸出
-					if (maxIntervalTimeNum == 0) {
-						cout << "    ============== Interval Time ==============" <<endl;
-						cout << "Interval Time over ";
-						maxIntervalTime.output();
-						cout << endl;
-						cout << "  #:    i   interval time  this time              next time           screen state             " <<endl;
-					}
-					printf("%3d:", ++maxIntervalTimeNum);
-					printf("%5d :   ", i);
-					intervalTime.output();
-					printf("     ");
-					allEventVec[i].thisDate->output();
-					printf(" -> ");
-					allEventVec[i].nextDate->output();
-					
-					//printf(" screen state : ");
-					printf(" %s -> " ,allEventVec[i].isThisScreenOn ? " on":"off");
-					printf(" %s" ,allEventVec[i].isNextScreenOn ? " on":"off");
-					
-					printf("\n");
-				}
-			}
-#endif
-    
-			// 檢查 oom_score & oom_adj 差異
-#ifdef MERGEFILE_debug_adj_score
-			int appNameID = -1;
-			//string findName("android.process.media");
-			//string findName("jp.co.hit_point.tabikaeru");
-			//string findName("com.madhead.tos.zh");
-			//string findName("com.nianticlabs.pokemongo");
-			//string findName("com.google.android.apps.translate");
-			string findName("com.facebook.orca:videoplayer");
-			for (int i=0; i<allAppNameVec.size(); i++) {
-				if (allAppNameVec[i].compare(0, findName.size(), findName) == 0) {
-					appNameID = i;
-					break;
-				}
-			}
-			
-			if (appNameID == -1) {
-				cout << "(error) check part::oom_score & oom_adj: Can't find check App Name!!!" <<endl;
-			} else {
-				cout << "Find out!! " << appNameID << ":" << allAppNameVec[appNameID] <<endl;
-				// 有找到則輸出所有的 oom_adj & oom_score
-				bool isFind = false;
-				for (vector<Point>::iterator onePoint = allPatternVec.begin();
-						 onePoint != allPatternVec.end(); onePoint++)
-				{
-					Point::App *checkApp = onePoint->getAppWithNamePoint(appNameID);
-					if (checkApp != NULL) {
-						isFind = true;
-						printf("%3d|%6d\n", checkApp->oom_adj, checkApp->oom_score);
-					} else if (isFind) {
-						isFind = false;
-						cout << "out|out" <<endl;
-					}
-				}
-			}
-#endif
-		
+			debug(unneededAppArray);
 		}
 		
 		/** 將 allPatternVec 整理後裝到這裡 allEventVec
@@ -391,8 +343,8 @@ class MergeFile {
         Point::App *nextApps = nextPoint->apps;
         int nextAppsNum = nextPoint->appNum;
 				// 紀錄是不是所有 current & next 的 App 都有對應到 and build
-        bool *currAppsMatch = buildMatchList(&*currPoint, unneededAppArray);
-        bool *nextAppsMatch = buildMatchList(&*nextPoint, unneededAppArray);//}
+        bool *currAppsMatch = initMatchList(&*currPoint, unneededAppArray);
+        bool *nextAppsMatch = initMatchList(&*nextPoint, unneededAppArray);//}
 				
 				// ----- 1. same pid and name
 				vector<pair<int, int> > PNpairs = buildSamePNpairs(&*currPoint, &*nextPoint, currAppsMatch, nextAppsMatch);
@@ -400,7 +352,7 @@ class MergeFile {
 				// ----- 2. same name, but difference pid
 				vector<pair<int, int> > Ppairs = buildSamePpairs(&*currPoint, &*nextPoint, currAppsMatch, nextAppsMatch);
 				
-				// ----- 3. other (在 Match 表格裡)
+				// ----- 3. other (but that on Match table)
 				
 				/** 分析上面整理出來的配對
 				 *  1. reuse App part : analysis PNpairs
@@ -524,7 +476,7 @@ class MergeFile {
 		 *  unneededAppArray : 不需要的 app list
 		 *  return : Match List
 		 */
-		bool *buildMatchList(const Point *point, bool *unneededAppArray) {
+		bool *initMatchList(const Point *point, bool *unneededAppArray) {
 			bool *matchList = new bool[point->appNum];
 			for (int i=0; i<point->appNum; i++) {
 				matchList[i] = unneededAppArray[point->apps[i].namePoint];
@@ -594,40 +546,151 @@ class MergeFile {
 			}//}
 			
 			return Ppairs;
-		}
-		
-		/** 加入 oneShot 到 allPatternVec 中，並更改 name index
-		 *  oneShot : 要加入的 Point
-		 *  oneAppNameVec : 舊的名字序列
-		 */
-    void addonePoint(Point oneShot, const vector<string> *oneAppNameVec) {
-      for (int i=0; i<oneShot.appNum; i++) {
-        findAppNameIndex(&oneShot.apps[i], &(*oneAppNameVec)[oneShot.apps[i].namePoint]);
-      }
-      allPatternVec.push_back(oneShot);
-    }
+		}//}
     
-		/** 回傳 appName 在 allAppNameVec 中是哪一個 index
-		 *  並加到 app 中和回傳
-		 *  app : 要被改寫的 APP
-		 *  appName : app name
-		 *  return : appName's index in allAppNameVec
+		/** debug function
+		 *   1. oomAdj less than 0 : 看 oom_adj 有沒有 0 以下的數值
+		 *   2. oomAdj rate onEachApp : 顯示 each app, oom_adj 零以上的資訊
+		 *   3. find out oom_score & oom_adj relation : 找出 oom_score & oom_adj 差別
+		 *   4. find out the Interval Time that is too long : 找出間隔時間 超過此時間 (maxIntervalTime)
 		 */
-    int findAppNameIndex(Point::App *app, const string *appName) {
-      // 先檢查 allAppNameVec 中有沒有此名字
-      for (int i=0; i<allAppNameVec.size(); i++) {
-        // 找到後直接回傳新的 namePoint
-        if (*appName == allAppNameVec[i]) {
-          app->namePoint = i;
-          return i;
+		void debug(bool *unneededAppArray) {
+      // 1. oomAdj less than 0 : 看 oom_adj 有沒有 0 以下的數值
+#ifdef MERGEFILE_debug_oomAdj_less_than_0
+			{ bool isHave = false;
+				for (int i=0; i<allAppDetailVec.size(); i++) {
+					for (int j=-20; j<0; j++) {
+						if (allAppDetailVec[i].getOom_adjStat(j)!=0) {
+							if (!isHave) {
+								cout << "    =============== oom_adj <0 ================" <<endl;
+								cout << "   i  oom_adj  Times  Name " <<endl;
+								isHave = true;
+							}
+							printf("%4d %8d  %5d  %s\n", i, j, allAppDetailVec[i].getOom_adjStat(j), allAppDetailVec[i].appName.c_str());
+						}
+					}
+				}
+			}
+#endif
+			
+			/** 2. oomAdj rate onEachApp : 顯示 each app, oom_adj 零以上的資訊
+			 *   print : --------------------------------------------------------------------------------------------------------┐
+			 *    |  i findRate(%)  0   1   2   3   4   5   6   7   8   9  10  11  12  13  14  15  16 (%) App's name             |
+			 *    |  0|        49|  0|   |   |   |  1|   |  0| 11|   | 29|   | 41|   |   |   | 18|   |---|android.process.media  |
+			 *    └--------------------------------------------------------------------------------------------------------------┘
+			 *    ps :  i : 第幾個 app
+			 *          findRate : 全部 pattern 出現過幾次
+			 *          0~16 : oom_adj 的比例 (佔自己出現過的總比例)
+			 */
+#ifdef MERGEFILE_debug_oomAdj_rate_onEachApp
+      { cout << "    ============== 0 <= oom_adj ==============" <<endl;
+        printf("  i findRate(%%)");
+        for (int j=0; j<=16; j++) {
+          printf(" %2d ", j);
+        }
+        cout << "(%) App's name" <<endl;
+        
+        // 主要輸出 app Detail 前面會先有過濾的動作，可以只看到想看到的訊息
+        for (int i=0; i<allAppDetailVec.size(); i++) {
+          if (unneededAppArray[i])  continue; // 略過不需要的 app
+          
+          //{ 用來只找特定的 app
+          //int temp = allAppDetailVec[i].appName.find(":", 0); // 看名字中有沒有 ":"
+          //if (temp<0)  continue;//}
+          
+          printf("%3d|      %4.0f|", i, allAppDetailVec[i].findRate*100);
+          for (int j=0; j<=16; j++) {
+            if (allAppDetailVec[i].getOom_adjStat(j)==0) {
+              printf("   |");
+              continue;
+            }
+            
+            double oom_adjRate = ((double)allAppDetailVec[i].getOom_adjStat(j))/allAppDetailVec[i].findTimes;
+            printf("%3.0lf|", 100*oom_adjRate);
+            if (j==3 && allAppDetailVec[i].getOom_adjStat(j)!=0) {
+              printf("%3d%4f%%", i, allAppDetailVec[i].findRate);
+              cout << " : " << allAppDetailVec[i].appName <<endl;
+            }
+          }
+          cout << "---|" << allAppDetailVec[i].appName <<endl;
         }
       }
-      
-      // 沒找到則將其加進去，並取得新的 index
-      allAppNameVec.push_back(*appName);
-      app->namePoint = allAppNameVec.size()-1;
-      return app->namePoint;
-    }
+#endif
+			
+			// 3. find out oom_score & oom_adj relation : 找出 oom_score & oom_adj 差別
+#ifdef MERGEFILE_debug_adj_score_relation
+			{ //string findName("android.process.media");
+				//string findName("jp.co.hit_point.tabikaeru");
+				//string findName("com.madhead.tos.zh");
+				//string findName("com.nianticlabs.pokemongo");
+				//string findName("com.google.android.apps.translate");
+				string findName("com.facebook.orca:videoplayer");
+				int appNameID = -1;
+				for (int i=0; i<allAppNameVec.size(); i++) {
+					if (allAppNameVec[i].compare(0, findName.size(), findName) == 0) {
+						appNameID = i;
+						break;
+					}
+				}
+				
+				if (appNameID == -1) {
+					cout << "(error) check part::oom_score & oom_adj: Can't find check App Name!!!" <<endl;
+				} else {
+					cout << "Find out!! " << appNameID << ":" << allAppNameVec[appNameID] <<endl;
+					// 有找到則輸出所有的 oom_adj & oom_score
+					bool isFind = false;
+					for (vector<Point>::iterator onePoint = allPatternVec.begin();
+							 onePoint != allPatternVec.end(); onePoint++)
+					{
+						Point::App *checkApp = onePoint->getAppWithNamePoint(appNameID);
+						if (checkApp != NULL) {
+							isFind = true;
+							printf("%3d|%6d\n", checkApp->oom_adj, checkApp->oom_score);
+						} else if (isFind) {
+							isFind = false;
+							cout << "out|out" <<endl;
+						}
+					}
+				}
+			}
+#endif
+			
+			// 4. find out the Interval Time that is too long : 找出間隔時間 超過此時間 (maxIntervalTime)
+#ifdef MERGEFILE_debug_IntervalTime
+			{ DateTime maxIntervalTime;
+				maxIntervalTime.initial();
+				maxIntervalTime.minute = 5;
+				int maxIntervalTimeNum = 0;
+				for (int i=0; i<allEventVec.size(); i++) {
+					DateTime intervalTime = *allEventVec[i].nextDate - *allEventVec[i].thisDate;
+					if (intervalTime>maxIntervalTime) {
+						// 有必要在輸出
+						if (maxIntervalTimeNum == 0) {
+							cout << "    ============== Interval Time ==============" <<endl;
+							cout << "Interval Time over ";
+							maxIntervalTime.output();
+							cout << endl;
+							cout << "  #:    i   interval time  this time              next time           screen state             " <<endl;
+						}
+						printf("%3d:", ++maxIntervalTimeNum);
+						printf("%5d :   ", i);
+						intervalTime.output();
+						printf("     ");
+						allEventVec[i].thisDate->output();
+						printf(" -> ");
+						allEventVec[i].nextDate->output();
+						
+						//printf(" screen state : ");
+						printf(" %s -> " ,allEventVec[i].isThisScreenOn ? " on":"off");
+						printf(" %s" ,allEventVec[i].isNextScreenOn ? " on":"off");
+						
+						printf("\n");
+					}
+				}
+			}
+#endif
+		}
+
 };
 
 #endif /* MERGE_FILE_HPP */

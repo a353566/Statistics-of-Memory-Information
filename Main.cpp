@@ -59,7 +59,8 @@ int main(int argc, char** argv) {
   cout << "收集了多少" << collectFileVec.size() << "檔案" <<endl;
   
   // 將檔案給 mergeFile 整理成可讓 dataMining 讀的資料
-  mergeFile.collection(&collectFileVec);
+  mergeFile.merge(&collectFileVec);
+  mergeFile.buildEventVec();
   // 將 mergeFile 中的 allEventVec appNameVec 給 dataMining 去整理
   dataMining.mining(&mergeFile.allEventVec, &mergeFile.allAppNameVec);
   
