@@ -12,6 +12,7 @@
 
 #include "DateTime.hpp"
 #include "StringToNumber.hpp"
+#include "AppInfo.hpp"
 
 using namespace std;
 
@@ -23,64 +24,22 @@ using namespace std;
  */
 class Point {
   public :
-    /** class App
-     * 單一 app 的所有資訊 
-     * 其中名字是用 point 的方式指向 appNameVec 其中一個真正的名字
-     * name|pid|TotalPss|oom_score|ground|oom_adj
-     * TotalPss|oom_score|ground|oom_adj
-     */
-    class App {
-      public :
-				const static int NULL_DATA = -10000; // 下面參數 6 個沒東西的話是 NULL_DATA
-        int namePoint;
-        int pid;
-        int totalPss;
-        int oom_score; // oom_score 是 NULL_DATA 的話代表沒有資料
-        int ground;    // ground 是 NULL_DATA 的話代表沒有資料
-        int oom_adj;   // oom_adj 是 NULL_DATA 的話代表沒有資料
-        
-        App() {
-          namePoint = NULL_DATA;
-          pid = NULL_DATA;
-          totalPss = NULL_DATA;
-          oom_score = NULL_DATA;
-          ground = NULL_DATA;
-          oom_adj = NULL_DATA;
-        }
-        
-        void output() {
-          cout << "namePoint:" << namePoint
-            << "\tpid:" << pid
-            << "\ttotalPss:" << totalPss
-            << "\toom_score:" << oom_score
-            << "\tground:" << ground
-            << "\toom_adj:" << oom_adj <<endl;
-        };
-        void output(const vector<string> *appNameVec) {
-          cout << "name:" << (*appNameVec)[namePoint] << '\n'
-            << "pid:" << pid
-            << "\ttotalPss:" << totalPss
-            << "\toom_score:" << oom_score
-            << "\tground:" << ground
-            << "\toom_adj:" << oom_adj <<endl;
-        };
-    };
     
     DateTime date;
     
     bool screen;
     int appNum;
-    App *apps;
+    AppInfo *apps;
     
     bool getTime(string dateTime) {
       return date.setAllDateTime(dateTime);
     }
 		
-		App *getAppWithIndex(int index) {
+		AppInfo *getAppWithIndex(int index) {
 			return (0<=index && index<appNum)? &(apps[index]) : NULL;
 		}
 		
-		App *getAppWithNamePoint(int namePoint) {
+		AppInfo *getAppWithNamePoint(int namePoint) {
 			for (int i=0; i<appNum; i++) {
 				if (apps[i].namePoint == namePoint) {
 					return &(apps[i]);
@@ -206,11 +165,11 @@ class CollectionFile {
           break;
         }//}
         //{ === 2(c)AppData 讀取 each App 並且會依照 Big or Small 有不同的處理方式
-        thisPoint.apps = new Point::App[thisPoint.appNum];
+        thisPoint.apps = new AppInfo[thisPoint.appNum];
         for (int getAppNum=0; getAppNum<thisPoint.appNum; getAppNum++) {
           if (fgets(getLine, getLineSize, file) != NULL) {
             line++;
-            Point::App tempApp;
+            AppInfo tempApp;
             int index = 0;
 						//{ == Big or Small collection
             // Big collection : name pid 要從中取出來
@@ -267,9 +226,9 @@ class CollectionFile {
               if (!StringToNumber(appTotalPss, &tempApp.totalPss)) {
                 // 可能只是 "手機沒有取得資料"
                 if (appTotalPss == "null") {
-                  tempApp.totalPss = Point::App::NULL_DATA;
+                  tempApp.totalPss = AppInfo::NULL_DATA;
                 } else {
-                  tempApp.totalPss = Point::App::NULL_DATA;
+                  tempApp.totalPss = AppInfo::NULL_DATA;
                   cout << "(error) CollectionFile::openFileAndRead() appTotalPss: " << appTotalPss <<endl;
 									cout << "        fileName: " << fileName <<endl;
                   appDataGood = false;
@@ -286,7 +245,7 @@ class CollectionFile {
             string appOomScore = subCharArray(getLine, getLineSize, '|', index++);
             if (appOomScore.size()!=0) {
               if (!StringToNumber(appOomScore, &tempApp.oom_score)) {
-                tempApp.oom_score = Point::App::NULL_DATA;
+                tempApp.oom_score = AppInfo::NULL_DATA;
                 cout << "(error) CollectionFile::openFileAndRead() appOomScore: " << appOomScore <<endl;
 								cout << "        fileName: " << fileName <<endl;
                 appDataGood = false;
@@ -302,7 +261,7 @@ class CollectionFile {
             string appGround = subCharArray(getLine, getLineSize, '|', index++);
             if (appGround.size()!=0) {
               if (!StringToNumber(appGround, &tempApp.ground)) {
-                tempApp.ground = Point::App::NULL_DATA;
+                tempApp.ground = AppInfo::NULL_DATA;
                 cout << "(error) CollectionFile::openFileAndRead() appGround: " << appGround <<endl;
                 cout << "        fileName: " << fileName <<endl;
 								appDataGood = false;
@@ -320,9 +279,9 @@ class CollectionFile {
               if (!StringToNumber(appOomAdj, &tempApp.oom_adj)) {
                 // 可能只是 "手機沒有取得資料"
                 if (appTotalPss == "null") {
-                  tempApp.oom_adj = Point::App::NULL_DATA;
+                  tempApp.oom_adj = AppInfo::NULL_DATA;
                 } else {
-                  tempApp.oom_adj = Point::App::NULL_DATA;
+                  tempApp.oom_adj = AppInfo::NULL_DATA;
                   cout << "(error) CollectionFile::openFileAndRead() appOomAdj: " << appTotalPss <<endl;
                   cout << "        fileName: " << fileName <<endl;
 									appDataGood = false;

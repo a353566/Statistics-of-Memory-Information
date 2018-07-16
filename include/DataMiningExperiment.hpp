@@ -10,6 +10,9 @@
 #define TRAINING_INTERVAL_DAY 14
 #define TEST_INTERVAL_DAY 7
 
+// add screen status
+//#define EXPERIMENT_add_screen_status  // (bug)
+
 //#define EXPERIMENT_debug_Print_Event  // point AppName out
 
 // ----- experiment part -----
@@ -17,8 +20,8 @@
 #define EXPERIMENT_GSP_const_level_part
 //#define EXPERIMENT_GSP_multiply_of_level_part
 #define EXPERIMENT_GSP_power_of_level_part
-//#define EXPERIMENT_LRU_part
-//#define EXPERIMENT_MFU_part
+#define EXPERIMENT_LRU_part
+#define EXPERIMENT_MFU_part
 
 #include "DateTime.hpp"
 #include "MergeFile.hpp"
@@ -28,17 +31,6 @@ using namespace std;
 
 class DataMining {
   public :
-    string screen_turn_on;
-    string screen_turn_off;
-    string screen_long_off;
-    int EPscreen_turn_on;
-    int EPscreen_turn_off;
-    int EPscreen_long_off;
-    DateTime intervalTime;
-    vector<int> trainingDMEventPoint;
-    vector<int> testDMEventPoint;
-    vector<string> DMEPtoEvent; // Data Mining Each Point to Event
-		
 		// 將結果印出，主要是避開輸出重複的資料
 		class printExperiment {
 			public :
@@ -148,6 +140,17 @@ class DataMining {
 				}
 		};
 		
+    string screen_turn_on;
+    string screen_turn_off;
+    string screen_long_off;
+    int EPscreen_turn_on;
+    int EPscreen_turn_off;
+    int EPscreen_long_off;
+    DateTime intervalTime;
+    vector<int> trainingDMEventPoint;
+    vector<int> testDMEventPoint;
+    vector<string> DMEPtoEvent; // Data Mining Each Point to Event
+		
     DataMining() {
       screen_turn_on = string("screen turn on");
       screen_turn_off = string("screen turn off");
@@ -193,9 +196,6 @@ class DataMining {
 			 */
 			buildData(&screenPattern, eventVec);
 			
-			// remove the same action
-			removeSameAction();
-			
       //{ ----- sequential patterns mining
 			//int min_support = trainingDMEventPoint.size()/200; // (0.5%)
 			int min_support = 2;
@@ -207,10 +207,6 @@ class DataMining {
 			filterVec.push_back(EPscreen_turn_off);
 			//filterVec.push_back(EPscreen_long_off);
 			gsp.Filter(&filterVec);//}
-			
-			//{ output GSP statistics
-			//gsp.OutputAll();
-			//gsp.OutpurAllTop();//}
 			
 			// ----- ElemStatsTree 實作機率與統計部分
 			//{ initial - test data
@@ -504,23 +500,159 @@ class DataMining {
 			}
 #endif
 			
+			//{ output GSP statistics
+			//gsp.OutputAll();
+			//gsp.OutpurAllTop();//}
     }
 		
-		/** 建立 sequence 方便搜尋和預測
-		 *  (bug) 不會比較 seqEnd 有沒有比 maxBackApp 還長，所以可能會往後挖過頭
-		 *  (bug) 也不會比較 seqEnd 有沒有超過 DMEventPoint
+		/** 利用螢幕分隔(screenPattern)來切成兩個時間段
+		 *  並將其資料分別裝入 trainingDMEventPoint、testDMEventPoint
+		 *  1. defind Start & End on two data : 找出兩種資料的開頭和結尾
+		 *  2. push "screen_ON interval" into two datas : 將 screen_ON interval 裝進 兩個資料 (trainingScnPatn & testScnPatn)
+		 *  3. Build two data : 利用 "screen_ON interval" 整理 兩筆資料 (trainingDMEventPoint & testDMEventPoint)
+		 *  screenPattern : 螢幕亮著的區間
+		 *  eventVec : 使用 APP 流程
+		 *  TRAINING_INTERVAL_DAY, TEST_INTERVAL_DAY : 分別為 training, test 時間
+		 *  (bug) 一定要小於 TrainingIT.day & TestIT.day，沒有寫防呆
 		 */
-		Sequence buildShortSequence(int seqEnd, int maxBackApp, const vector<int> *DMEventPoint) {
-			Sequence shortSeq;
-			// 整理 sequence
-			for (int j=seqEnd-maxBackApp; j<=seqEnd; j++) {
-				Itemset tmpItem;
-				tmpItem.item.push_back(DMEventPoint->at(j));
-				shortSeq.itemset.push_back(tmpItem);
+		void buildData(vector<pair<int, int> > *screenPattern, vector<Event> *eventVec) {
+			//{ initial
+			vector<pair<int, int> > trainingScnPatn, testScnPatn;
+			int trainingStart = 0;
+			int trainingEnd = 0;
+			int testStart = 0;
+			int testEnd = screenPattern->size()-1;
+			DateTime TrainingIT, TestIT; // 設定 training & test data 要多久 (ps: IT = interval time)
+			TrainingIT.initial_Day(TRAINING_INTERVAL_DAY);
+			TestIT.initial_Day(TEST_INTERVAL_DAY);//}
+			
+			// ----- 1. defind Start & End on two data : 找出兩種資料的開頭和結尾
+#ifdef PIN_TESTEND_ON_DATAEND
+			//{ 以 data end 開始往前收集
+			DateTime *endTime = eventVec->at(screenPattern->at(testEnd).second).thisDate;
+			for (testStart = testEnd; 0<=testStart; testStart--) {
+				DateTime *headTime = eventVec->at(screenPattern->at(testStart).first).thisDate;
+				if (*endTime - *headTime > TestIT) { // (bug) 一定要小於 TestIT.day，沒有寫防呆
+					break;
+				}
 			}
-			//shortSeq.Output();
-			return shortSeq;
+			trainingEnd = testStart-1;
+			endTime = eventVec->at(screenPattern->at(trainingEnd).second).thisDate;
+			for (trainingStart = trainingEnd; 0<=trainingStart; trainingStart--) {
+				DateTime *headTime = eventVec->at(screenPattern->at(trainingStart).first).thisDate;
+				if (*endTime - *headTime > TrainingIT) { // (bug) 一定要小於 TrainingIT.day，沒有寫防呆
+					break;
+				}
+			}//}
+#else
+			//{ 以 data start 開始往後收集
+			DateTime *headTime = eventVec->at(screenPattern->at(trainingStart).first).thisDate;
+			for (trainingEnd = trainingStart; trainingEnd<eventVec->size(); trainingEnd++) {
+				DateTime *endTime = eventVec->at(screenPattern->at(trainingEnd).second).thisDate;
+				if (*endTime - *headTime > TrainingIT) { // (bug) 一定要小於 TrainingIT.day，沒有寫防呆
+					break;
+				}
+			}
+			testStart = trainingEnd+1;
+			headTime = eventVec->at(screenPattern->at(testStart).first).thisDate;
+			for (testEnd = testStart; testEnd<eventVec->size(); testEnd++) {
+				DateTime *endTime = eventVec->at(screenPattern->at(testEnd).second).thisDate;
+				if (*endTime - *headTime > TestIT) { // (bug) 一定要小於 TestIT.day，沒有寫防呆
+					break;
+				}
+			}//}
+#endif
+			
+			//{ ----- 2. push "screen_ON interval" into two datas : 將 screen_ON interval 裝進 兩個資料 (trainingScnPatn & testScnPatn)
+			for (int i=trainingStart; i<=trainingEnd; i++) {
+				trainingScnPatn.push_back(screenPattern->at(i));
+			}
+			testStart = trainingEnd+1; // 通常
+			for (int i=testStart; i<=testEnd; i++) {
+				testScnPatn.push_back(screenPattern->at(i));
+			}//}
+			
+      //{ ----- 3. Build two data : 利用 "screen_ON interval" 整理 兩筆資料 (trainingDMEventPoint & testDMEventPoint)
+      buildDMEventPoint(&trainingDMEventPoint, &trainingScnPatn, eventVec);
+      buildDMEventPoint(&testDMEventPoint, &testScnPatn, eventVec);//}
+			
+			//{ output
+			cout << "Training action data is between ";
+			eventVec->at(screenPattern->at(trainingStart).first).thisDate->output();
+			cout << " and\n                                ";
+			eventVec->at(screenPattern->at(trainingEnd).second).thisDate->output();
+			cout << "\nTraining data mining event point have (" << trainingDMEventPoint.size() << ") times" <<endl;
+			
+			cout << "Test action data is between ";
+			eventVec->at(screenPattern->at(testStart).first).thisDate->output();
+			cout << " and\n                            ";
+			eventVec->at(screenPattern->at(testEnd).second).thisDate->output();
+			cout << "\nTest data mining event point have (" << testDMEventPoint.size() << ") times" <<endl;//}
 		}
+		
+    /** 如果有遇到一次發現多的 app 執行的話
+     *  就用 "oom_score" 來判斷先後 數字大的先
+		 *  最後 刪除重複的資料
+     *  DMEventPoint : Push data into DMEventPoint(Data Event Point).
+     *  usePattern : The data is according to the Screen Changed.
+     *  eventVec : Event data
+     */
+		void buildDMEventPoint(vector<int> *DMEventPoint, vector<pair<int, int> > *usePattern, vector<Event> *eventVec) {
+      // 用 usePattern 來取出
+      for (vector<pair<int, int> >::iterator useInterval = usePattern->begin();
+			     useInterval != usePattern->end(); useInterval++) {
+				// 順序是先
+				// 1. check screen, if turn on, record it
+				// 2. record app
+				// 3. check screen, if turn off, record it
+				
+				// ----- 1. check screen, if turn on, record it
+#ifdef EXPERIMENT_add_screen_status
+				DMEventPoint->push_back(EPscreen_turn_on);
+#endif
+
+        //{ ----- 2. record app
+        for (int EP=useInterval->first; EP<=useInterval->second; EP++) { // PS: EP = EventPoint
+          Event* oneshut = &(eventVec->at(EP));
+          vector<Event::Case> *caseVec = &(oneshut->caseVec);
+          //{ 有東西才記錄
+          if (caseVec->size()!=0) {
+            bool app_record[caseVec->size()];
+            for (int j=0; j<caseVec->size(); j++) {
+              app_record[j] = false;
+            }
+            for (int j=0; j<caseVec->size(); j++) {
+              int big_oom_score = -1;
+              int big_app_num = -1;
+              int big_app_name = -1;
+              for (int k=0; k<caseVec->size(); k++) {
+                if (app_record[k]) {
+                  continue;
+                }
+                if (big_oom_score <= caseVec->at(k).nextApp->oom_score) {
+                  big_oom_score = caseVec->at(k).nextApp->oom_score;
+                  big_app_num = k;
+                  big_app_name = caseVec->at(k).nextApp->namePoint;
+                }
+              }
+              if (big_oom_score<0 || big_app_num<0 || big_app_name<0) {
+                cout << "bad" <<endl;
+              }
+              DMEventPoint->push_back(big_app_name);
+              app_record[big_app_num] = true;
+            }
+          }//}
+        }//}
+				
+				// ----- 3. check screen, if turn off, record it
+#ifdef EXPERIMENT_add_screen_status
+				DMEventPoint->push_back(EPscreen_turn_off);
+#endif
+      }
+			
+			// ----- final. remove the same action
+			removeSameAction(DMEventPoint);
+    }
 		
 		/** 檢查一下螢幕資料是否有問題 
 		 *  有連續的兩個點連接的螢幕資訊不一樣的話，會出輸警告
@@ -571,182 +703,39 @@ class DataMining {
       }
 		}
 		
-		/** 利用螢幕分隔(screenPattern)來切成兩個時間段
-		 *  並將其資料分別裝入 trainingDMEventPoint、testDMEventPoint
-		 *  screenPattern : 螢幕亮著的區間
-		 *  eventVec : 使用 APP 流程
-		 *  TRAINING_INTERVAL_DAY, TEST_INTERVAL_DAY : 分別為 training, test 時間
-		 *  (bug) 一定要小於 TrainingIT.day & TestIT.day，沒有寫防呆
+		/** 建立 sequence 方便搜尋和預測
+		 *  (bug) 不會比較 seqEnd 有沒有比 maxBackApp 還長，所以可能會往後挖過頭
+		 *  (bug) 也不會比較 seqEnd 有沒有超過 DMEventPoint
 		 */
-		void buildData(vector<pair<int, int> > *screenPattern, vector<Event> *eventVec) {
-			//{ 設定 training & test data 要多久
-			DateTime TrainingIT, TestIT; // Training interval time , test interval time
-			TrainingIT.initial_Day(TRAINING_INTERVAL_DAY);
-			TestIT.initial_Day(TEST_INTERVAL_DAY);//}
-			
-			//{ initial
-			vector<pair<int, int> > trainingScnPatn, testScnPatn;
-			int trainingStart = 0;
-			int trainingEnd = 0;
-			int testStart = 0;
-			int testEnd = screenPattern->size()-1;//}
-			
-			// 找出兩種資料的開頭和結尾
-#ifdef PIN_TESTEND_ON_DATAEND
-			//{ 以 data end 開始往前收集
-			DateTime *endTime = eventVec->at(screenPattern->at(testEnd).second).thisDate;
-			for (testStart = testEnd; 0<=testStart; testStart--) {
-				DateTime *headTime = eventVec->at(screenPattern->at(testStart).first).thisDate;
-				if (*endTime - *headTime > TestIT) { // (bug) 一定要小於 TestIT.day，沒有寫防呆
-					break;
-				}
+		Sequence buildShortSequence(int seqEnd, int maxBackApp, const vector<int> *DMEventPoint) {
+			Sequence shortSeq;
+			// 整理 sequence
+			for (int j=seqEnd-maxBackApp; j<=seqEnd; j++) {
+				Itemset tmpItem;
+				tmpItem.item.push_back(DMEventPoint->at(j));
+				shortSeq.itemset.push_back(tmpItem);
 			}
-			trainingEnd = testStart-1;
-			endTime = eventVec->at(screenPattern->at(trainingEnd).second).thisDate;
-			for (trainingStart = trainingEnd; 0<=trainingStart; trainingStart--) {
-				DateTime *headTime = eventVec->at(screenPattern->at(trainingStart).first).thisDate;
-				if (*endTime - *headTime > TrainingIT) { // (bug) 一定要小於 TrainingIT.day，沒有寫防呆
-					break;
-				}
-			}//}
-#else
-			//{ 以 data start 開始往後收集
-			DateTime *headTime = eventVec->at(screenPattern->at(trainingStart).first).thisDate;
-			for (trainingEnd = trainingStart; trainingEnd<eventVec->size(); trainingEnd++) {
-				DateTime *endTime = eventVec->at(screenPattern->at(trainingEnd).second).thisDate;
-				if (*endTime - *headTime > TrainingIT) { // (bug) 一定要小於 TrainingIT.day，沒有寫防呆
-					break;
-				}
-			}
-			testStart = trainingEnd+1;
-			headTime = eventVec->at(screenPattern->at(testStart).first).thisDate;
-			for (testEnd = testStart; testEnd<eventVec->size(); testEnd++) {
-				DateTime *endTime = eventVec->at(screenPattern->at(testEnd).second).thisDate;
-				if (*endTime - *headTime > TestIT) { // (bug) 一定要小於 TestIT.day，沒有寫防呆
-					break;
-				}
-			}//}
-#endif
-			
-			//{ 裝進 trainingScnPatn & testScnPatn
-			for (int i=trainingStart; i<=trainingEnd; i++) {
-				trainingScnPatn.push_back(screenPattern->at(i));
-			}
-			testStart = trainingEnd+1; // 通常
-			for (int i=testStart; i<=testEnd; i++) {
-				testScnPatn.push_back(screenPattern->at(i));
-			}//}
-			
-      //{ 整理後裝進 trainingDMEventPoint (training)、testDMEventPoint (test)
-      buildDMEventPoint(&trainingDMEventPoint, &trainingScnPatn, eventVec);
-      buildDMEventPoint(&testDMEventPoint, &testScnPatn, eventVec);//}
-			
-			//{ 輸出相關資訊
-			cout << "Training action data is between ";
-			eventVec->at(screenPattern->at(trainingStart).first).thisDate->output();
-			cout << " and\n                                ";
-			eventVec->at(screenPattern->at(trainingEnd).second).thisDate->output();
-			cout << "\nTraining data mining event point have (" << trainingDMEventPoint.size() << ") times" <<endl;
-			
-			cout << "Test action data is between ";
-			eventVec->at(screenPattern->at(testStart).first).thisDate->output();
-			cout << " and\n                            ";
-			eventVec->at(screenPattern->at(testEnd).second).thisDate->output();
-			cout << "\nTest data mining event point have (" << testDMEventPoint.size() << ") times" <<endl;//}
+			//shortSeq.Output();
+			return shortSeq;
 		}
-		
-    /** 如果有遇到一次發現多的 app 執行的話
-     *  就用 "oom_score" 來判斷先後
-     *  數字大的前面
-     *  最後都放到 trainingDMEventPoint 之中
-     */
-    void buildDMEventPoint(vector<int> *trainingDMEventPoint, vector<pair<int, int> > *usePattern, vector<Event> *eventVec) {
-      // 用 usePattern 來取出
-      for (int i=0; i<usePattern->size(); i++) {
-        pair<int, int> useInterval = usePattern->at(i);
-				// 順序是先
-				// 1. check screen, if turn on, record it
-				// 2. record app
-				// 3. check screen, if turn off, record it
-				
-				// ----- 1. check screen, if turn on, record it
-				//trainingDMEventPoint->push_back(EPscreen_turn_on);
-				
-        //{ ----- 2. record app
-        for (int EP=useInterval.first; EP<=useInterval.second; EP++) { // PS: EP = EventPoint
-          Event* oneshut = &(eventVec->at(EP));
-          vector<Event::Case> *caseVec = &(oneshut->caseVec);
-          //{ 有東西才記錄
-          if (caseVec->size()!=0) {
-            bool app_record[caseVec->size()];
-            for (int j=0; j<caseVec->size(); j++) {
-              app_record[j] = false;
-            }
-            for (int j=0; j<caseVec->size(); j++) {
-              int big_oom_score = -1;
-              int big_app_num = -1;
-              int big_app_name = -1;
-              for (int k=0; k<caseVec->size(); k++) {
-                if (app_record[k]) {
-                  continue;
-                }
-                if (big_oom_score <= caseVec->at(k).nextApp->oom_score) {
-                  big_oom_score = caseVec->at(k).nextApp->oom_score;
-                  big_app_num = k;
-                  big_app_name = caseVec->at(k).nextApp->namePoint;
-                }
-              }
-              if (big_oom_score<0 || big_app_num<0 || big_app_name<0) {
-                cout << "bad" <<endl;
-              }
-              trainingDMEventPoint->push_back(big_app_name);
-              app_record[big_app_num] = true;
-            }
-          }//}
-        }//}
-				
-				// ----- 3. check screen, if turn off, record it
-				//trainingDMEventPoint->push_back(EPscreen_turn_off);
-      }
-    }
 		
 		/** 將 training、test 中連續一樣的資料刪掉
 		 *  以免後面出現使用連續兩個一樣的 APP
 		 */
-		void removeSameAction() {
-			//{ training
-			vector<int>::iterator lastIter = trainingDMEventPoint.begin();
-			vector<int>::iterator thisIter = trainingDMEventPoint.begin();
+		void removeSameAction(vector<int> *DMEventPoint) {
+			vector<int>::iterator lastIter = DMEventPoint->begin();
+			vector<int>::iterator thisIter = DMEventPoint->begin();
 			thisIter++;
-			while (thisIter!=trainingDMEventPoint.end()) {
+			while (thisIter != DMEventPoint->end()) {
 				if (*lastIter != *thisIter) {
 					// 不一樣的話沒事
-					lastIter++;
+					lastIter = thisIter;
 					thisIter++;
 				} else {
 					// 一樣的話要刪掉 thisIter
-					thisIter = trainingDMEventPoint.erase(thisIter);
+					thisIter = DMEventPoint->erase(thisIter);
 				}
-			}//}
-			
-			//{ test
-			lastIter = testDMEventPoint.begin();
-			thisIter = testDMEventPoint.begin();
-			thisIter++;
-			while (thisIter!=testDMEventPoint.end()) {
-				if (*lastIter != *thisIter) {
-					// 不一樣的話沒事
-					lastIter++;
-					thisIter++;
-				} else {
-					// 一樣的話要刪掉 thisIter
-					thisIter = testDMEventPoint.erase(thisIter);
-				}
-			}//}
-			
-			//{ output
-			cout << "NEW User training action have (" << trainingDMEventPoint.size() << ") times" <<endl;
-			cout << "NEW User test action have (" << testDMEventPoint.size() << ") times" <<endl;//}
+			}
 		}
 		
 		/** (bug)

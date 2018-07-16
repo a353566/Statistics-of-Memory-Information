@@ -8,9 +8,18 @@
 #include <iostream>
 
 //#define MERGEFILE_AppDetail_addOom_Stat
-//#define MERGEFILE_debug_oomAdj_statistics
+
+// ----- oom_adj & oom_score ----- (ps: choose one)
+//#define MERGEFILE_USEAPP_just_adj
+#define MERGEFILE_USEAPP_just_score
+//#define MERGEFILE_USEAPP_adj_first   // (bug)nothing
+
+// ----- oom_score parameter -----
+#define score_top_threshold 300
+#define score_below_threshold 160
 
 // ----- debug part -----
+//#define MERGEFILE_debug_Event_happen_times
 //#define MERGEFILE_debug_oomAdj_less_than_0
 //#define MERGEFILE_debug_oomAdj_rate_onEachApp
 //#define MERGEFILE_debug_adj_score_relation
@@ -19,6 +28,7 @@
 #include "DateTime.hpp"
 #include "StringToNumber.hpp"
 #include "CollectionFile.hpp"
+#include "AppInfo.hpp"
 using namespace std;
 
 /** Event : record interesting Point
@@ -30,11 +40,27 @@ class Event {
       public :
         int namePoint;
         bool isCreat;   // true 的話 只有 nextApp 有東西
-        Point::App *thisApp;
-        Point::App *nextApp;
+        AppInfo *currApp;
+        AppInfo *nextApp;
+				
         Case() {
           isCreat = false;
-        };
+        }
+				
+				// 根據 currApp & nextApp 來寫入
+				Case(bool isCreat, AppInfo *currApp, AppInfo *nextApp) {
+					this->isCreat = isCreat;
+					this->currApp = currApp;
+					this->nextApp = nextApp;
+					this->namePoint = nextApp->namePoint;
+				}
+				
+				// 根據 nextApp 來寫入
+				Case(bool isCreat, AppInfo *nextApp) {
+					this->isCreat = isCreat;
+					this->nextApp = nextApp;
+					this->namePoint = nextApp->namePoint;
+				}
     };
     
 		// lastTime "useApp" thisDate nextDate
@@ -107,7 +133,7 @@ class Event {
 
 class MergeFile {
   public :
-    // 單一APP的詳細資料，主要是用於分析，對NC檔沒有幫助
+    // 單一APP的詳細資料，主要是用於分析
     class AppDetail {
       public :
         string appName;
@@ -115,11 +141,13 @@ class MergeFile {
         double findRate;
         int oom_adjStat[41]; // range is -20~20 (不過目前只有-17~16)
         int oom_scoreStat[41]; // record 0~24 25~49 51~75 ... 975~999 1000, oom_score/25 oom_score range is 0~1000
+				int oom_scoreBelowThresholdCount;
         
         AppDetail(string appName) {
           this->appName = appName;
           findTimes = 0;
           findRate = 0;
+					oom_scoreBelowThresholdCount = 0;
           for (int i=0; i<41; i++) {
             oom_adjStat[i]=0;
             oom_scoreStat[i]=0;
@@ -154,6 +182,10 @@ class MergeFile {
 				
 				// oom_score
         bool addOom_scoreStat(int oom_score) {
+					if ( 0<=oom_score && oom_score <= score_below_threshold) {
+						oom_scoreBelowThresholdCount++;
+					}
+					
           if ( 0<=oom_score && oom_score<=1000 ) {
             oom_scoreStat[oom_score/25]++;
             return true;
@@ -189,6 +221,7 @@ class MergeFile {
      *  其中的 Event 是使用者剛好切換 APP 或是開關螢幕也會知道
      */
     vector<Event> allEventVec;
+		int appsChangeTimes;  // Point 前後 apps 改變次數
 		
     MergeFile() {
 			// add filter app name
@@ -231,7 +264,7 @@ class MergeFile {
 				     onePattern != allPatternVec.end(); onePattern++)
 				{
 					for (int i=0; i<onePattern->appNum; i++) {
-						Point::App *inspectApp = &onePattern->apps[i];
+						AppInfo *inspectApp = &onePattern->apps[i];
             if (inspectNameID == inspectApp->namePoint) {
               newAppDetail.findTimes++;
               newAppDetail.addOom_adjStat(inspectApp->oom_adj);
@@ -262,7 +295,7 @@ class MergeFile {
 		 *  appName : app name
 		 *  return : appName's index in allAppNameVec
 		 */
-    int findAppNameIndex(Point::App *app, const string *appName) {
+    int findAppNameIndex(AppInfo *app, const string *appName) {
       // 先檢查 allAppNameVec 中有沒有此名字
       for (int i=0; i<allAppNameVec.size(); i++) {
         // 找到後直接回傳新的 namePoint
@@ -281,25 +314,34 @@ class MergeFile {
 		//  ┌------------------------------┐ 
 		//  | Build "allEventVec" function | 
 		/** └------------------------------┘ 
-		 *  Consider "oom_adj" & "screen changed" to Build allEventVec.
+		 *  Consider ("oom_adj" or "oom_score") & "screen changed" to Build allEventVec.
 		 */ //{
     void buildEventVec() {
-      /** 有些要跳過的 app & 不需要的直接跳過的 app
-			 *  不需要的有 : oom_adj 沒出現過 0，表示沒有在前景出現過
-			 *               為了收集資料的 app
+      /** 過濾掉沒使用到的 app && 自己的 app
+			 *  不需要的有 : 
+			 *   | 沒使用到的 app 
+			 *   |  | a) adj   : oom_adj 沒出現過 0，表示沒有在前景出現過
+			 *   |  | b) score : oom_score 沒出現過 0~score_below_threshold (0~160)，表示沒有在前景出現過
+			 *   | 為了收集資料的 app (myself)
 			 */ //{
       bool unneededAppArray[allAppDetailVec.size()];
       for (int i=0; i<allAppDetailVec.size(); i++) {
         // 1. initial
         unneededAppArray[i] = false;
 				
-        // 2. oom_adj 沒出現過 0
-        if (allAppDetailVec[i].getOom_adjStat(0)==0) {
-          unneededAppArray[i] = true;
+				//{ 2. 沒使用到的 app
+#ifdef MERGEFILE_USEAPP_just_adj // oom_adj 沒出現過 0
+        if (allAppDetailVec[i].getOom_adjStat(0)==0)
+#endif
+#ifdef MERGEFILE_USEAPP_just_score // oom_score 沒出現過 0~score_below_threshold
+        if (allAppDetailVec[i].oom_scoreBelowThresholdCount==0)
+#endif
+				{
+					unneededAppArray[i] = true;
           continue;
-        }
+        }//}
 				
-				// 3. filter
+				//{ 3. filter
 				for (vector<string>::iterator filterName = filterAppName.begin();
 				     filterName != filterAppName.end(); filterName++)
 				{
@@ -308,7 +350,7 @@ class MergeFile {
 						unneededAppArray[i] = true;
 						break;
 					}
-				}
+				}//}
       }//}
 			
       // ----- important ----- 整理成 allEventVec 
@@ -327,7 +369,7 @@ class MergeFile {
 		 *  unneededAppArray : 不會用到的 APP 陣列
 		 */
     void makeAllEventVec(bool *unneededAppArray) {
-      int AppsChangeTimes = 0;	// Point 前後 apps 改變次數
+      appsChangeTimes = 0;	// Point 前後 apps 改變次數
       //{ 檢查前後兩個 Point (currPoint, nextPoint) 中 apps 的變化
 			vector<Point>::iterator currPoint = allPatternVec.begin();
 			vector<Point>::iterator nextPoint = allPatternVec.begin(); nextPoint++;
@@ -338,9 +380,9 @@ class MergeFile {
 				 *   3. other
 				 */
 				//{ initial
-        Point::App *currApps = currPoint->apps;
+        AppInfo *currApps = currPoint->apps;
         int currAppsNum = currPoint->appNum;
-        Point::App *nextApps = nextPoint->apps;
+        AppInfo *nextApps = nextPoint->apps;
         int nextAppsNum = nextPoint->appNum;
 				// 紀錄是不是所有 current & next 的 App 都有對應到 and build
         bool *currAppsMatch = initMatchList(&*currPoint, unneededAppArray);
@@ -374,44 +416,33 @@ class MergeFile {
 				//{ ----- 1. reuse App part : analysis PNpairs
 				isOom_adjCgToZero = false;
 				for (pairIter = PNpairs.begin(); pairIter != PNpairs.end(); pairIter++) {
-					Point::App *currApp = currPoint->getAppWithIndex(pairIter->first);
-					Point::App *nextApp = nextPoint->getAppWithIndex(pairIter->second);
-					if (currApp->oom_adj != nextApp->oom_adj && nextApp->oom_adj == 0) {
+					AppInfo *currApp = currPoint->getAppWithIndex(pairIter->first);
+					AppInfo *nextApp = nextPoint->getAppWithIndex(pairIter->second);
+					if (isReuse(currApp, nextApp)) {
 						isOom_adjCgToZero = true;
-						Event::Case newCase;  // 收集 case
-						newCase.namePoint = currApp->namePoint;
-						newCase.isCreat = false;
-						newCase.thisApp = currApp;
-						newCase.nextApp = nextApp;
-						analysisEvent.caseVec.push_back(newCase);
+						analysisEvent.caseVec.push_back(Event::Case(false, currApp, nextApp));
 					}
 				}//}
 				
 				//{ ----- 2. creat App : analysis Next Match List
 				isCreatNewApp = false;
         for (int i=0; i<nextAppsNum; i++) {
-          if (!nextAppsMatch[i] && nextApps[i].oom_adj==0) {
-						isCreatNewApp = true;
-						Event::Case newCase; // 收集 case
-						newCase.namePoint = nextApps[i].namePoint;
-						newCase.isCreat = true;
-						newCase.nextApp = &(nextApps[i]);
-						analysisEvent.caseVec.push_back(newCase);
-          }
+					if (!nextAppsMatch[i]) {
+						AppInfo *nextApp = &(nextApps[i]);
+						if (isCreatAndReuse(nextApp)) {
+							isCreatNewApp = true;
+							analysisEvent.caseVec.push_back(Event::Case(true, nextApp));
+						}
+					}
         }//}
 				
 				//{ ----- 3. reuse App but pid is difference : analysis Ppairs
 				for (pairIter = Ppairs.begin(); pairIter != Ppairs.end(); pairIter++) {
-					Point::App *currApp = currPoint->getAppWithIndex(pairIter->first);
-					Point::App *nextApp = nextPoint->getAppWithIndex(pairIter->second);
-					
-					if (currApp->oom_adj != nextApp->oom_adj && nextApp->oom_adj == 0) {isOom_adjCgToZero = true;
-						Event::Case newCase;  // 收集 case
-						newCase.namePoint = currApp->namePoint;
-						newCase.isCreat = false;
-						newCase.thisApp = currApp;
-						newCase.nextApp = nextApp;
-						analysisEvent.caseVec.push_back(newCase);
+					AppInfo *currApp = currPoint->getAppWithIndex(pairIter->first);
+					AppInfo *nextApp = nextPoint->getAppWithIndex(pairIter->second);
+					if (isReuse(currApp, nextApp)) {
+						isOom_adjCgToZero = true;
+						analysisEvent.caseVec.push_back(Event::Case(false, currApp, nextApp));
 					}
 				}//}
 				
@@ -427,7 +458,7 @@ class MergeFile {
           allEventVec.push_back(analysisEvent);
         }//}
 				
-        //{ (後面輸出用) Point 前後有改變的話 AppsChangeTimes++
+        //{ (後面輸出用) Point 前後有改變的話 appsChangeTimes++
 				bool isChange = false;
 				for (int i=0; i<currAppsNum && !isChange; i++) {
 					if (!currAppsMatch[i]) {
@@ -440,37 +471,59 @@ class MergeFile {
 					}
 				}
         if (isChange) {
-          AppsChangeTimes++;
+          appsChangeTimes++;
 				}//}
 			}//}
 			
       //{ allEventVec 中的 app 可能出現重複的 app (收集時就有問題)
-			for (int i=0; i<allEventVec.size(); i++) {
-				allEventVec.at(i).sortOut();
+			for (vector<Event>::iterator oneEvent = allEventVec.begin();
+			     oneEvent != allEventVec.end(); oneEvent++)
+			{
+				oneEvent->sortOut();
 			}//}
-      
-      // 輸出 each oom_adj 統計
-#ifdef MERGEFILE_debug_oomAdj_statistics
-			cout << "    ================= oom_adj =================" <<endl;
-			cout << "Change Times : " << AppsChangeTimes <<endl;
-			cout << "oom_adj change(creat) to zero times : " << allEventVec.size() <<endl;
-			
-			cout << "oom_adj change detail : " <<endl;
-			cout << "   No    1    2    3    4    5    6    7    8  other" <<endl;
-			int chToZero[10] = {0};
-			for (int i=0; i<allEventVec.size(); i++) {
-				if (allEventVec[i].caseVec.size()<9)
-					chToZero[allEventVec[i].caseVec.size()]++;
-				else
-					chToZero[9]++;
-			}
-			for (int i=0; i<10; i++) {
-				printf("%5d", chToZero[i]);
-			}
-			cout<<endl;
-#endif
 		}
     
+		// 檢查有沒有重新使用
+		bool isReuse(AppInfo *currApp, AppInfo *nextApp) {
+			// adj
+#ifdef MERGEFILE_USEAPP_just_adj
+			bool usingChanged = currApp->oom_adj != nextApp->oom_adj;
+			bool isUsing = nextApp->oom_adj == 0;
+			return usingChanged && isUsing;
+#endif
+			
+			// score
+#ifdef MERGEFILE_USEAPP_just_score
+			bool notUse = currApp->oom_score > score_top_threshold;
+			bool isUsing = nextApp->oom_score < score_below_threshold;
+			return notUse && isUsing;
+#endif
+			
+			// adj first
+#ifdef MERGEFILE_USEAPP_adj_first
+			
+#endif
+		}
+		
+		// 檢查有沒有重新使用
+		bool isCreatAndReuse(AppInfo *nextApp) {
+			// score
+#ifdef MERGEFILE_USEAPP_just_score
+			bool isUsing = nextApp->oom_score < score_below_threshold;
+			return isUsing;
+#endif
+			
+			// adj
+#ifdef MERGEFILE_USEAPP_just_adj
+			bool isUsing = nextApp->oom_adj == 0;
+			return isUsing;
+#endif
+			// adj first
+#ifdef MERGEFILE_USEAPP_adj_first
+			
+#endif
+		}
+		
 		/** 建立表格，並去除 unneededAppArray 中的 app
 		 *  point : 從中取得 apps 並對此建立
 		 *  unneededAppArray : 不需要的 app list
@@ -492,9 +545,9 @@ class MergeFile {
 		vector<pair<int, int> > buildSamePNpairs(const Point *currPoint, const Point *nextPoint, bool *currAppsMatch, bool *nextAppsMatch) {
 			//{ initial
 			vector<pair<int, int> > PNpairs;
-			Point::App *currApps = currPoint->apps;
+			AppInfo *currApps = currPoint->apps;
 			int currAppsNum = currPoint->appNum;
-			Point::App *nextApps = nextPoint->apps;
+			AppInfo *nextApps = nextPoint->apps;
 			int nextAppsNum = nextPoint->appNum;//}
 			
 			//{ find same pid & namePoint
@@ -524,9 +577,9 @@ class MergeFile {
 		vector<pair<int, int> > buildSamePpairs(const Point *currPoint, const Point *nextPoint, bool *currAppsMatch, bool *nextAppsMatch) {
 			//{ initial
 			vector<pair<int, int> > Ppairs;
-			Point::App *currApps = currPoint->apps;
+			AppInfo *currApps = currPoint->apps;
 			int currAppsNum = currPoint->appNum;
-			Point::App *nextApps = nextPoint->apps;
+			AppInfo *nextApps = nextPoint->apps;
 			int nextAppsNum = nextPoint->appNum;//}
 			
 			//{ find same pid & namePoint
@@ -548,14 +601,40 @@ class MergeFile {
 			return Ppairs;
 		}//}
     
-		/** debug function
-		 *   1. oomAdj less than 0 : 看 oom_adj 有沒有 0 以下的數值
-		 *   2. oomAdj rate onEachApp : 顯示 each app, oom_adj 零以上的資訊
-		 *   3. find out oom_score & oom_adj relation : 找出 oom_score & oom_adj 差別
-		 *   4. find out the Interval Time that is too long : 找出間隔時間 超過此時間 (maxIntervalTime)
-		 */
+		//  ┌----------------┐
+		//  | debug function |
+		/** └----------------┘
+		 *   1. Event happen times : Event 狀態 & each oom_adj 統計
+		 *   2. oomAdj less than 0 : 看 oom_adj 有沒有 0 以下的數值
+		 *   3. oomAdj rate onEachApp : 顯示 each app, oom_adj 零以上的資訊
+		 *   4. find out oom_score & oom_adj relation : 找出 oom_score & oom_adj 差別
+		 *   5. find out the Interval Time that is too long : 找出間隔時間 超過此時間 (maxIntervalTime)
+		 */ //{
 		void debug(bool *unneededAppArray) {
-      // 1. oomAdj less than 0 : 看 oom_adj 有沒有 0 以下的數值
+      // 1. Event happen times : Event 狀態 & each oom_adj 統計
+#ifdef MERGEFILE_debug_Event_happen_times
+			cout << "    ============= Event happen times =============" <<endl;
+			cout << "Change Times : " << appsChangeTimes <<endl;
+			cout << "oom_adj change(creat) to zero times : " << allEventVec.size() <<endl;
+			
+			cout << "oom_adj change detail : " <<endl;
+			cout << "   No    1    2    3    4    5    6    7    8  other" <<endl;
+			int chToZero[10] = {0};
+			for (vector<Event>::iterator oneEvent = allEventVec.begin();
+			     oneEvent != allEventVec.end(); oneEvent++)
+			{
+				if (oneEvent->caseVec.size()<9)
+					chToZero[oneEvent->caseVec.size()]++;
+				else
+					chToZero[9]++;
+			}
+			for (int i=0; i<10; i++) {
+				printf("%5d", chToZero[i]);
+			}
+			cout<<endl;
+#endif
+
+      // 2. oomAdj less than 0 : 看 oom_adj 有沒有 0 以下的數值
 #ifdef MERGEFILE_debug_oomAdj_less_than_0
 			{ bool isHave = false;
 				for (int i=0; i<allAppDetailVec.size(); i++) {
@@ -573,7 +652,7 @@ class MergeFile {
 			}
 #endif
 			
-			/** 2. oomAdj rate onEachApp : 顯示 each app, oom_adj 零以上的資訊
+			/** 3. oomAdj rate onEachApp : 顯示 each app, oom_adj 零以上的資訊
 			 *   print : --------------------------------------------------------------------------------------------------------┐
 			 *    |  i findRate(%)  0   1   2   3   4   5   6   7   8   9  10  11  12  13  14  15  16 (%) App's name             |
 			 *    |  0|        49|  0|   |   |   |  1|   |  0| 11|   | 29|   | 41|   |   |   | 18|   |---|android.process.media  |
@@ -617,7 +696,7 @@ class MergeFile {
       }
 #endif
 			
-			// 3. find out oom_score & oom_adj relation : 找出 oom_score & oom_adj 差別
+			// 4. find out oom_score & oom_adj relation : 找出 oom_score & oom_adj 差別
 #ifdef MERGEFILE_debug_adj_score_relation
 			{ //string findName("android.process.media");
 				//string findName("jp.co.hit_point.tabikaeru");
@@ -642,7 +721,7 @@ class MergeFile {
 					for (vector<Point>::iterator onePoint = allPatternVec.begin();
 							 onePoint != allPatternVec.end(); onePoint++)
 					{
-						Point::App *checkApp = onePoint->getAppWithNamePoint(appNameID);
+						AppInfo *checkApp = onePoint->getAppWithNamePoint(appNameID);
 						if (checkApp != NULL) {
 							isFind = true;
 							printf("%3d|%6d\n", checkApp->oom_adj, checkApp->oom_score);
@@ -655,7 +734,7 @@ class MergeFile {
 			}
 #endif
 			
-			// 4. find out the Interval Time that is too long : 找出間隔時間 超過此時間 (maxIntervalTime)
+			// 8. find out the Interval Time that is too long : 找出間隔時間 超過此時間 (maxIntervalTime)
 #ifdef MERGEFILE_debug_IntervalTime
 			{ DateTime maxIntervalTime;
 				maxIntervalTime.initial();
@@ -689,8 +768,7 @@ class MergeFile {
 				}
 			}
 #endif
-		}
-
+		}//}
 };
 
 #endif /* MERGE_FILE_HPP */
