@@ -10,8 +10,8 @@
 #include <string.h>
 #include <iostream>
 
-#include "DateTime.hpp"
-#include "StringToNumber.hpp"
+#include "tool/DateTime.hpp"
+#include "tool/StringToNumber.hpp"
 #include "AppInfo.hpp"
 
 using namespace std;

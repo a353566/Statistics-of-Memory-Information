@@ -7,6 +7,12 @@
 #include <stdio.h>
 #include <iostream>
 
+#include "tool/DateTime.hpp"
+#include "tool/StringToNumber.hpp"
+#include "CollectionFile.hpp"
+#include "AppInfo.hpp"
+using namespace std;
+
 //#define MERGEFILE_AppDetail_addOom_Stat
 
 // ----- oom_adj & oom_score ----- (ps: choose one)
@@ -24,12 +30,6 @@
 //#define MERGEFILE_debug_oomAdj_rate_onEachApp
 //#define MERGEFILE_debug_adj_score_relation
 //#define MERGEFILE_debug_IntervalTime
-
-#include "DateTime.hpp"
-#include "StringToNumber.hpp"
-#include "CollectionFile.hpp"
-#include "AppInfo.hpp"
-using namespace std;
 
 /** Event : record interesting Point
  *  Now, we record "oom_adj -> 0" and "screen changed" tow thing.
@@ -356,6 +356,7 @@ class MergeFile {
       // ----- important ----- 整理成 allEventVec 
       makeAllEventVec(unneededAppArray);
 			
+			// ----- debug -----
 			debug(unneededAppArray);
 		}
 		

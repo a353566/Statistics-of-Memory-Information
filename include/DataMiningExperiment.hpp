@@ -6,28 +6,31 @@
 #include <stdio.h>
 #include <iostream>
 
-#define PIN_TESTEND_ON_DATAEND
-#define TRAINING_INTERVAL_DAY 14
-#define TEST_INTERVAL_DAY 7
+#include "MergeFile.hpp"
+#include "GSPMining/GSP.hpp"
+#include "GSPMining/GSP_Predict.hpp"
+#include "tool/DateTime.hpp"
+using namespace std;
 
 // add screen status
 //#define EXPERIMENT_add_screen_status  // (bug)
 
-//#define EXPERIMENT_debug_Print_Event  // point AppName out
+//#define EXPERIMENT_debug_Print_Event  // print Point AppName
+
+// ----- "interval day" of training & test -----
+#define PIN_TESTEND_ON_DATAEND
+//#define TRAINING_INTERVAL_DAY 75
+//#define TEST_INTERVAL_DAY 0
+#define TRAINING_INTERVAL_DAY 14
+#define TEST_INTERVAL_DAY 7
 
 // ----- experiment part -----
-#define EXPERIMENT_GSP_normal_part
-#define EXPERIMENT_GSP_const_level_part
+//#define EXPERIMENT_GSP_normal_part
+//#define EXPERIMENT_GSP_const_level_part
 //#define EXPERIMENT_GSP_multiply_of_level_part
-#define EXPERIMENT_GSP_power_of_level_part
-#define EXPERIMENT_LRU_part
-#define EXPERIMENT_MFU_part
-
-#include "DateTime.hpp"
-#include "MergeFile.hpp"
-#include "SequentialPatternsMining/GSP.hpp"
-#include "SequentialPatternsMining/GSP_Predict.hpp"
-using namespace std;
+//#define EXPERIMENT_GSP_power_of_level_part
+//#define EXPERIMENT_LRU_part
+//#define EXPERIMENT_MFU_part
 
 class DataMining {
   public :
@@ -159,350 +162,43 @@ class DataMining {
       intervalTime.initial();
       intervalTime.hour = 1;
     }
-
-		// main function
-    bool mining(vector<Event> *eventVec, vector<string> *allAppNameVec) {
-			// check screen state
+		
+		//  ┌----------------┐
+		//  | build function |
+		/** └----------------┘
+		 *  建立 training & test data & DMEPtoEvent
+		 *  讓後面的 experiment 可以運作
+		 *  1. Build DMEPtoEvent
+		 *  2. Segment eventVec into screenPattern that the screen is "ON" : 主要是將 screen 亮著的區間做間隔
+		 *  3. Divide eventVec into two data : 將 screenPattern 用時間分成 training test 兩份
+		 *  eventVec : 所有事件
+		 */ //{
+    void build(vector<Event> *eventVec, vector<string> *allAppNameVec) {
+			// (check) screen state
 			checkScreenState(eventVec);
 			
-      //{ ----- initial
-      // 放 app name & screen status
-      for (int i=0; i<allAppNameVec->size(); i++) {
-        DMEPtoEvent.push_back(allAppNameVec->at(i));
-      }
-      // screen "screen turn on" "screen turn off" "screen long off"
-      DMEPtoEvent.push_back(screen_turn_on);
-      EPscreen_turn_on = DMEPtoEvent.size()-1;
-      DMEPtoEvent.push_back(screen_turn_off);
-      EPscreen_turn_off = DMEPtoEvent.size()-1;
-      DMEPtoEvent.push_back(screen_long_off);
-      EPscreen_long_off = DMEPtoEvent.size()-1;//}
+      // ----- 1. Build DMEPtoEvent
+			buildDMEPtoEvent(allAppNameVec);
 
-			// point AppName out
-#ifdef EXPERIMENT_debug_Print_Event
-			for (int i=0; i<DMEPtoEvent.size(); i++)
-				cout << i << "\t:" << DMEPtoEvent[i] <<endl;
-#endif
-			
-			//{ screenPattern : 主要是將 screen 亮著的區間做間隔
-      vector<pair<int, int> > screenPattern;
-      buildScreenPattern(&screenPattern, eventVec);
+			//{ ----- 2. Segment eventVec into screenPattern that the screen is "ON" : 主要是將 screen 亮著的區間做間隔
+      vector<pair<int, int> > screenPattern = segmentScreenPattern(eventVec);
 			cout << "Screen on->off interval have (" << screenPattern.size() << ") times" <<endl;//}
 			
-			/** 將 screenPattern 用時間分成 training test 兩份
-			 *  讓 eventVec 可以直接分成兩個資料
-			 *  相關 define parameter 在上面
-			 *  TRAINING_INTERVAL_DAY , TEST_INTERVAL_DAY 
-			 */
+			// ----- 3. Divide eventVec into two data : 將 screenPattern 用時間分成 training test 兩份
 			buildData(&screenPattern, eventVec);
 			
-      //{ ----- sequential patterns mining
-			//int min_support = trainingDMEventPoint.size()/200; // (0.5%)
-			int min_support = 2;
-			cout << "min_support: " << min_support <<endl;
-      GSP gsp(trainingDMEventPoint, min_support);
-      gsp.Mining();
-			vector<int> filterVec;
-			filterVec.push_back(EPscreen_turn_on);
-			filterVec.push_back(EPscreen_turn_off);
-			//filterVec.push_back(EPscreen_long_off);
-			gsp.Filter(&filterVec);//}
-			
-			// ----- ElemStatsTree 實作機率與統計部分
-			//{ initial - test data
-			GSP_Predict gspPredict(&gsp);
-			const int maxBackApp = 9;
-			const int maxPredictApp = 9;
-			int failedTimes;
-			int successTimes[maxPredictApp];
-			cout<<endl;//}
-			
-			// GSP normal Algorithm
-#ifdef EXPERIMENT_GSP_normal_part
-			{ cout << " ----- GSP normal predict:" <<endl;
-				//{ initial
-				failedTimes = 0;
-				for (int i=0; i<maxPredictApp; i++) {
-					successTimes[i] = 0;
-				}//}
-				
-				//{ predict
-				for (int i=maxBackApp; i<testDMEventPoint.size()-1; i++) {
-					Sequence shortSeq = buildShortSequence(i, maxBackApp, &testDMEventPoint);
-					// 預測和記錄
-					PredictResult result = gspPredict.predictResult_normal(&shortSeq, maxPredictApp);
-					int predictNum = result.predict(testDMEventPoint.at(i+1), maxPredictApp); // (ps: reallyUseApp, maxPredictApp)
-					if (predictNum == PredictResult::PREDICT_MISS) {
-						failedTimes++;
-					} else {
-						successTimes[predictNum-1]++;
-					}
-				}//}
-				
-				//{ output
-				printExperiment::print(successTimes, failedTimes, maxPredictApp, true);
-				cout<<endl;//}
+			// (mason)
+			/*int count[200];
+			for (int i=0; i<200; i++) {
+				count[i]=0;
 			}
-#endif
-			
-			// GSP const level Algorithm
-#ifdef EXPERIMENT_GSP_const_level_part
-			{ cout << " ----- GSP const level predict:" <<endl;
-				cout << "peep | Total   |         |                            predict rate on difference Level                             |" <<endl;
-				cout << " App | pattern |   MFU   | Level 1 | Level 2 | Level 3 | Level 4 | Level 5 | Level 6 | Level 7 | Level 8 | Level 9 |" <<endl;
-				//{ initial
-				const int maxPredictAppforSL = 1;
-				failedTimes = 0;
-				for (int i=0; i<maxPredictAppforSL; i++) {
-					successTimes[i] = 0;
-				}//}
-				
-				//{ 建立預測結果表格 (which sequence, level)
-				const int EMPTY = 0;
-				const int PREDICT_FAIL = -1;
-				const int PREDICT_HEAD = 1; // 後面加幾代表第幾個才預測到
-				int predictLevelMap[testDMEventPoint.size()][maxBackApp];
-				for (int i=0; i<testDMEventPoint.size(); i++) {
-					for (int j=0; j<maxBackApp; j++) {
-						predictLevelMap[i][j] = EMPTY;
-					}
-				}//}
-				
-				//{ predict & 建立結果表格
-				for (int i=maxBackApp; i<testDMEventPoint.size()-1; i++) {
-					Sequence shortSeq = buildShortSequence(i, maxBackApp, &testDMEventPoint);
-					int reallyUseApp = testDMEventPoint.at(i+1);
-					
-					// 預測和判斷是否成功
-					for (int level=0; level<maxBackApp; level++) {
-						double parameter[1];
-						parameter[0] = level;
-						PredictResult result = gspPredict.predictResult_byMethod(GSP_Predict::ConstLevel, parameter, &shortSeq, maxPredictAppforSL);
-						
-						// 檢查確實有結果才繼續，否則跳出換下一個
-						if (result.resultPairs.at(0).first != PredictResult::NO_APP) {
-							if (result.resultPairs.at(0).first == reallyUseApp) {
-								predictLevelMap[i][level] = PREDICT_HEAD + 1;	// 1 : 第幾個才預測到
-							} else {
-								predictLevelMap[i][level] = PREDICT_FAIL;
-							}
-						} else {
-							break;
-						}
-					}
-				}//}
-				
-				//{ 統計表格 difference level effect & output
-				for (int level=0; level<maxBackApp; level++) {
-					//{ initial
-					for (int i=0; i<maxPredictApp; i++) {
-						successTimes[i] = 0;
-					}
-					vector<int> catchSeqVec; // 知道有哪些是有搜尋到的內容
-					failedTimes = 0; //}
-					
-					//{ 先找自己這層有多少個 & 沒有則跳出
-					for (int i=0; i<testDMEventPoint.size(); i++) {
-						if (predictLevelMap[i][level] != EMPTY) {
-							catchSeqVec.push_back(i);
-							if (predictLevelMap[i][level] != PREDICT_FAIL) {
-								successTimes[level]++;
-							} else {
-								failedTimes++;
-							}
-						} else {
-							continue;
-						}
-					}
-					if (catchSeqVec.empty()) {
-						break;
-					}//}
-					
-					//{ 之後往下搜尋
-					for (int downLevel = level-1; 0<=downLevel; downLevel--) {
-						for (vector<int>::iterator seqHead = catchSeqVec.begin(); 
-								 seqHead != catchSeqVec.end(); seqHead++)
-						{
-							if (predictLevelMap[*seqHead][downLevel] != PREDICT_FAIL) {
-								successTimes[downLevel]++;
-							} else {
-								failedTimes++;
-							}
-						}
-					}//}
-					
-					//{ output
-					int totalPattern = catchSeqVec.size();
-					printf("%4d | %7d | ", level, totalPattern);
-					for (int i = 0; i<=level; i++) {
-						printf("%1.5f | ", (double)successTimes[i]/totalPattern);
-					}
-					cout<<endl;//}
-				}
-				cout <<endl;//}
+			for (auto onePoint = trainingDMEventPoint.begin(); onePoint != trainingDMEventPoint.end(); onePoint++) {
+				count[*onePoint]++;
+				//cout << *onePoint <<endl;
 			}
-#endif
-			
-			// GSP multiply of level Algorithm
-#ifdef EXPERIMENT_GSP_multiply_of_level_part
-			{ cout << " ----- GSP multiply predict rate:" <<endl;
-				cout << "base | multiply |                             predict App Num & predict rate                              |" <<endl;
-				cout << "     |      Num |  1 app  |  2 app  |  3 app  |  4 app  |  5 app  |  6 app  |  7 app  |  8 app  |  9 app  |" <<endl;
-				//{ parameter initial | method: weight = base + multiplyNum * level(0~n)
-				double base = 1;
-				double multiplyNum = 900;
-				double multiplyNumMax = 900;
-				double multiplyGrow = 1;
-				printExperiment multiplyPrint(maxPredictApp);//}
-				
-				for (multiplyNum; multiplyNum <= multiplyNumMax; multiplyNum+=multiplyGrow) {
-					//{ initial
-					failedTimes = 0;
-					for (int i=0; i<maxPredictApp; i++) {
-						successTimes[i] = 0;
-					}//}
-					
-					//{ predict
-					double parameter[2];
-					parameter[0] = base;
-					parameter[1] = multiplyNum;
-					for (int i=maxBackApp; i<testDMEventPoint.size()-1; i++) {
-						Sequence shortSeq = buildShortSequence(i, maxBackApp, &testDMEventPoint);
-						
-						// 預測和記錄
-						PredictResult result = gspPredict.predictResult_byMethod(GSP_Predict::multiplyOfLevle, parameter, &shortSeq, maxPredictApp);
-						int predictNum = result.predict(testDMEventPoint.at(i+1), maxPredictApp); // (ps: reallyUseApp, maxPredictApp)
-						if (predictNum == PredictResult::PREDICT_MISS) {
-							failedTimes++;
-						} else {
-							successTimes[predictNum-1]++;
-						}
-					}//}
-					
-					//{ output
-					char outChar[64];
-					snprintf(outChar, 64, "%.2f | %.5f | ", base, multiplyNum);
-					string str = string(outChar);
-					multiplyPrint.printImportant(successTimes, failedTimes, &str);//}
-				}
-				multiplyPrint.finalPrint();
-				cout<<endl;
-			}
-#endif
-			
-			// GSP power of level Algorithm
-#ifdef EXPERIMENT_GSP_power_of_level_part
-			{ cout << " ----- GSP power predict rate:" <<endl;
-				cout << "base |   power |                             predict App Num & predict rate                              |" <<endl;
-				cout << "     |     Num |  1 app  |  2 app  |  3 app  |  4 app  |  5 app  |  6 app  |  7 app  |  8 app  |  9 app  |" <<endl;
-				//{ parameter initial | method: weight = base + powerNum ^ level(0~n)
-				double base = 1;
-				double powerNum = 900;
-				double powerNumMax = 900;
-				double powerGrow = 1;
-				printExperiment powerPrint(maxPredictApp);//}
-				
-				for (powerNum; powerNum <= powerNumMax; powerNum+=powerGrow) {
-					//{ initial
-					failedTimes = 0;
-					for (int i=0; i<maxPredictApp; i++) {
-						successTimes[i] = 0;
-					}//}
-					
-					//{ predict
-					double parameter[2];
-					parameter[0] = base;
-					parameter[1] = powerNum;
-					for (int i=maxBackApp; i<testDMEventPoint.size()-1; i++) {
-						Sequence shortSeq = buildShortSequence(i, maxBackApp, &testDMEventPoint);
-						
-						// 預測和記錄
-						PredictResult result = gspPredict.predictResult_byMethod(GSP_Predict::powerOfLevel, parameter, &shortSeq, maxPredictApp);
-						int predictNum = result.predict(testDMEventPoint.at(i+1), maxPredictApp); // (ps: reallyUseApp, maxPredictApp)
-						if (predictNum == PredictResult::PREDICT_MISS) {
-							failedTimes++;
-						} else {
-							successTimes[predictNum-1]++;
-						}
-					}//}
-					
-					//{ output
-					char outChar[64];
-					snprintf(outChar, 64, "%.2f | %.5f | ", base, powerNum);
-					string str = string(outChar);
-					powerPrint.printImportant(successTimes, failedTimes, &str);//}
-				}
-				powerPrint.finalPrint();
-				cout<<endl;
-			}
-#endif
-			
-			// LRU
-#ifdef EXPERIMENT_LRU_part
-			{ cout << " ----- LRU predict:" <<endl;
-				//{ initial
-				failedTimes = 0;
-				for (int i=0; i<maxPredictApp; i++) {
-					successTimes[i] = 0;
-				}//}
-				
-				//{ predict
-				for (int i=maxBackApp; i<testDMEventPoint.size()-1; i++) {
-					int reallyUseApp = testDMEventPoint.at(i+1);
-					for (int j=1; j<maxBackApp+1 && j<maxPredictApp+1; j++) {
-						if (testDMEventPoint.at(i-j) == reallyUseApp) {
-							successTimes[j-1]++;
-							break;
-						} else if (j == maxBackApp || j == maxPredictApp) {
-							failedTimes++;
-						}
-					}
-				}//}
-				
-				//{ output
-				printExperiment::print(successTimes, failedTimes, maxPredictApp, true);
-				cout<<endl;//}
-			}
-#endif
-			
-			// MFU
-#ifdef EXPERIMENT_MFU_part
-			{ cout << " ----- MFU predict:" <<endl;
-				//{ initial
-				failedTimes = 0;
-				for (int i=0; i<maxPredictApp; i++) {
-					successTimes[i] = 0;
-				}//}
-				
-				//{ 整理 sequence
-				Sequence shortSeq;
-				Itemset tmpItem;
-				tmpItem.item.push_back(30000);
-				shortSeq.itemset.push_back(tmpItem);//}
-				
-				//{ predict
-				double parameter[1];
-				parameter[0]=0;
-				PredictResult result = gspPredict.predictResult_byMethod(GSP_Predict::ConstLevel, parameter, &shortSeq, maxPredictApp);
-				for (int i=maxBackApp; i<testDMEventPoint.size()-1; i++) {
-					// 預測和記錄
-					int predictNum = result.predict(testDMEventPoint.at(i+1), maxPredictApp); // (ps: reallyUseApp, maxPredictApp)
-					if (predictNum == PredictResult::PREDICT_MISS) {
-						failedTimes++;
-					} else {
-						successTimes[predictNum-1]++;
-					}
-				}//}
-				
-				//{ output
-				printExperiment::print(successTimes, failedTimes, maxPredictApp, true);
-				cout<<endl;//}
-			}
-#endif
-			
-			//{ output GSP statistics
-			//gsp.OutputAll();
-			//gsp.OutpurAllTop();//}
+			for (int i=0; i<200; i++) {
+				cout << i << "|" << count[i] <<endl;
+			}*/
     }
 		
 		/** 利用螢幕分隔(screenPattern)來切成兩個時間段
@@ -651,8 +347,27 @@ class DataMining {
       }
 			
 			// ----- final. remove the same action
-			removeSameAction(DMEventPoint);
+			//removeSameAction(DMEventPoint);
     }
+		
+		/** 將 training、test 中連續一樣的資料刪掉
+		 *  以免後面出現使用連續兩個一樣的 APP
+		 */
+		void removeSameAction(vector<int> *DMEventPoint) {
+			vector<int>::iterator lastIter = DMEventPoint->begin();
+			vector<int>::iterator thisIter = DMEventPoint->begin();
+			thisIter++;
+			while (thisIter != DMEventPoint->end()) {
+				if (*lastIter != *thisIter) {
+					// 不一樣的話沒事
+					lastIter = thisIter;
+					thisIter++;
+				} else {
+					// 一樣的話要刪掉 thisIter
+					thisIter = DMEventPoint->erase(thisIter);
+				}
+			}
+		}
 		
 		/** 檢查一下螢幕資料是否有問題 
 		 *  有連續的兩個點連接的螢幕資訊不一樣的話，會出輸警告
@@ -668,10 +383,33 @@ class DataMining {
 			}
 		}
 		
+		// 建立 DMEPtoEvent 並加入其他 point (ex: screen status)
+		void buildDMEPtoEvent(vector<string> *allAppNameVec) {
+			// 放 app name & screen status
+			for (int i=0; i<allAppNameVec->size(); i++) {
+				DMEPtoEvent.push_back(allAppNameVec->at(i));
+			}
+			
+			// push screen on & off into DMEPtoEvent ("screen turn on", "screen turn off", "screen long off")
+			DMEPtoEvent.push_back(screen_turn_on);
+			EPscreen_turn_on = DMEPtoEvent.size()-1;
+			DMEPtoEvent.push_back(screen_turn_off);
+			EPscreen_turn_off = DMEPtoEvent.size()-1;
+			DMEPtoEvent.push_back(screen_long_off);
+			EPscreen_long_off = DMEPtoEvent.size()-1;
+			
+			// print Point AppName
+#ifdef EXPERIMENT_debug_Print_Event
+			for (int i=0; i<DMEPtoEvent.size(); i++)
+				cout << i << "\t:" << DMEPtoEvent[i] <<endl;
+#endif
+		}
+		
 		/** 取得 screen 開關 Pattern
 		 *  主要是取得 on -> off 也就是亮著的時間間隔
 		 */
-		void buildScreenPattern(vector<pair<int, int> > *screenPattern, vector<Event> *eventVec) {
+		vector<pair<int, int> > segmentScreenPattern(vector<Event> *eventVec) {
+			vector<pair<int, int> > screenPattern;
       // 看螢幕"暗著"的時間間隔 // mason
       pair<int, int> onePattern = make_pair(0,0);
       int pI = 0;
@@ -696,11 +434,336 @@ class DataMining {
         // 找到亮暗的區間
         // 先檢察是不是還在 pattern 範圍內，是的話就記錄，不是就 break
         if (pI < eventVec->size()) {
-          screenPattern->push_back(onePattern);
+          screenPattern.push_back(onePattern);
         } else {
 					break;
 				}
       }
+			
+			return screenPattern;
+		}//}
+		
+		//  ┌---------------------┐
+		//  | Experiment function |
+		/** └---------------------┘
+		 *  1. GSP sequential patterns mining
+		 *  2. Experiment 
+		 *   | 1) GSP normal Algorithm
+		 *   | 2) GSP const level Algorithm
+		 *   | 3) GSP multiply of level Algorithm
+		 *   | 4) GSP power of level Algorithm
+		 *   | 5) LRU
+		 *   | 6) MFU
+		 */ //{
+		void experiment() {
+      //{ ----- 1. GSP sequential patterns mining
+			//int min_support = trainingDMEventPoint.size()/200; // (0.5%)
+			int min_support = 2;
+			cout << "min_support: " << min_support <<endl;
+      GSP gsp(trainingDMEventPoint, min_support);
+      gsp.Mining();
+			vector<int> filterVec;
+			filterVec.push_back(EPscreen_turn_on);
+			filterVec.push_back(EPscreen_turn_off);
+			//filterVec.push_back(EPscreen_long_off);
+			gsp.Filter(&filterVec);
+			
+			// (print) GSP statistics
+			//gsp.OutputAll();
+			//gsp.OutpurAllTop();//}
+			
+			// ----- 2. Experiment 
+			//{ initial
+			GSP_Predict gspPredict(&gsp);
+			const int maxBackApp = 9;
+			const int maxPredictApp = 9;
+			int failedTimes;
+			int successTimes[maxPredictApp];
+			cout<<endl;//}
+			
+			// 1) GSP normal Algorithm
+#ifdef EXPERIMENT_GSP_normal_part
+			{ cout << " ----- GSP normal predict:" <<endl;
+				//{ initial
+				failedTimes = 0;
+				for (int i=0; i<maxPredictApp; i++) {
+					successTimes[i] = 0;
+				}//}
+				
+				//{ predict
+				for (int i=maxBackApp; i<testDMEventPoint.size()-1; i++) {
+					Sequence shortSeq = buildShortSequence(i, maxBackApp, &testDMEventPoint);
+					// 預測和記錄
+					PredictResult result = gspPredict.predictResult_normal(&shortSeq, maxPredictApp);
+					int predictNum = result.predict(testDMEventPoint.at(i+1), maxPredictApp); // (ps: reallyUseApp, maxPredictApp)
+					if (predictNum == PredictResult::PREDICT_MISS) {
+						failedTimes++;
+					} else {
+						successTimes[predictNum-1]++;
+					}
+				}//}
+				
+				//{ output
+				printExperiment::print(successTimes, failedTimes, maxPredictApp, true);
+				cout<<endl;//}
+			}
+#endif
+			
+			// 2) GSP const level Algorithm
+#ifdef EXPERIMENT_GSP_const_level_part
+			{ cout << " ----- GSP const level predict:" <<endl;
+				cout << "peep | Total   |         |                            predict rate on difference Level                             |" <<endl;
+				cout << " App | pattern |   MFU   | Level 1 | Level 2 | Level 3 | Level 4 | Level 5 | Level 6 | Level 7 | Level 8 | Level 9 |" <<endl;
+				//{ initial
+				const int maxPredictAppforSL = 1;
+				failedTimes = 0;
+				for (int i=0; i<maxPredictAppforSL; i++) {
+					successTimes[i] = 0;
+				}//}
+				
+				//{ 建立預測結果表格 (which sequence, level)
+				const int EMPTY = 0;
+				const int PREDICT_FAIL = -1;
+				const int PREDICT_HEAD = 1; // 後面加幾代表第幾個才預測到
+				int predictLevelMap[testDMEventPoint.size()][maxBackApp];
+				for (int i=0; i<testDMEventPoint.size(); i++) {
+					for (int j=0; j<maxBackApp; j++) {
+						predictLevelMap[i][j] = EMPTY;
+					}
+				}//}
+				
+				//{ predict & 建立結果表格
+				for (int i=maxBackApp; i<testDMEventPoint.size()-1; i++) {
+					Sequence shortSeq = buildShortSequence(i, maxBackApp, &testDMEventPoint);
+					int reallyUseApp = testDMEventPoint.at(i+1);
+					
+					// 預測和判斷是否成功
+					for (int level=0; level<maxBackApp; level++) {
+						double parameter[1];
+						parameter[0] = level;
+						PredictResult result = gspPredict.predictResult_byMethod(GSP_Predict::ConstLevel, parameter, &shortSeq, maxPredictAppforSL);
+						
+						// 檢查確實有結果才繼續，否則跳出換下一個
+						if (result.resultPairs.at(0).first != PredictResult::NO_APP) {
+							if (result.resultPairs.at(0).first == reallyUseApp) {
+								predictLevelMap[i][level] = PREDICT_HEAD + 1;	// 1 : 第幾個才預測到
+							} else {
+								predictLevelMap[i][level] = PREDICT_FAIL;
+							}
+						} else {
+							break;
+						}
+					}
+				}//}
+				
+				//{ 統計表格 difference level effect & output
+				for (int level=0; level<maxBackApp; level++) {
+					//{ initial
+					for (int i=0; i<maxPredictApp; i++) {
+						successTimes[i] = 0;
+					}
+					vector<int> catchSeqVec; // 知道有哪些是有搜尋到的內容
+					failedTimes = 0; //}
+					
+					//{ 先找自己這層有多少個 & 沒有則跳出
+					for (int i=0; i<testDMEventPoint.size(); i++) {
+						if (predictLevelMap[i][level] != EMPTY) {
+							catchSeqVec.push_back(i);
+							if (predictLevelMap[i][level] != PREDICT_FAIL) {
+								successTimes[level]++;
+							} else {
+								failedTimes++;
+							}
+						} else {
+							continue;
+						}
+					}
+					if (catchSeqVec.empty()) {
+						break;
+					}//}
+					
+					//{ 之後往下搜尋
+					for (int downLevel = level-1; 0<=downLevel; downLevel--) {
+						for (vector<int>::iterator seqHead = catchSeqVec.begin(); 
+								 seqHead != catchSeqVec.end(); seqHead++)
+						{
+							if (predictLevelMap[*seqHead][downLevel] != PREDICT_FAIL) {
+								successTimes[downLevel]++;
+							} else {
+								failedTimes++;
+							}
+						}
+					}//}
+					
+					//{ output
+					int totalPattern = catchSeqVec.size();
+					printf("%4d | %7d | ", level, totalPattern);
+					for (int i = 0; i<=level; i++) {
+						printf("%1.5f | ", (double)successTimes[i]/totalPattern);
+					}
+					cout<<endl;//}
+				}
+				cout <<endl;//}
+			}
+#endif
+			
+			// 3) GSP multiply of level Algorithm
+#ifdef EXPERIMENT_GSP_multiply_of_level_part
+			{ cout << " ----- GSP multiply predict rate:" <<endl;
+				cout << "base | multiply |                             predict App Num & predict rate                              |" <<endl;
+				cout << "     |      Num |  1 app  |  2 app  |  3 app  |  4 app  |  5 app  |  6 app  |  7 app  |  8 app  |  9 app  |" <<endl;
+				//{ parameter initial | method: weight = base + multiplyNum * level(0~n)
+				double base = 1;
+				double multiplyNum = 900;
+				double multiplyNumMax = 900;
+				double multiplyGrow = 1;
+				printExperiment multiplyPrint(maxPredictApp);//}
+				
+				for (multiplyNum; multiplyNum <= multiplyNumMax; multiplyNum+=multiplyGrow) {
+					//{ initial
+					failedTimes = 0;
+					for (int i=0; i<maxPredictApp; i++) {
+						successTimes[i] = 0;
+					}//}
+					
+					//{ predict
+					double parameter[2];
+					parameter[0] = base;
+					parameter[1] = multiplyNum;
+					for (int i=maxBackApp; i<testDMEventPoint.size()-1; i++) {
+						Sequence shortSeq = buildShortSequence(i, maxBackApp, &testDMEventPoint);
+						
+						// 預測和記錄
+						PredictResult result = gspPredict.predictResult_byMethod(GSP_Predict::multiplyOfLevle, parameter, &shortSeq, maxPredictApp);
+						int predictNum = result.predict(testDMEventPoint.at(i+1), maxPredictApp); // (ps: reallyUseApp, maxPredictApp)
+						if (predictNum == PredictResult::PREDICT_MISS) {
+							failedTimes++;
+						} else {
+							successTimes[predictNum-1]++;
+						}
+					}//}
+					
+					//{ output
+					char outChar[64];
+					snprintf(outChar, 64, "%.2f | %.5f | ", base, multiplyNum);
+					string str = string(outChar);
+					multiplyPrint.printImportant(successTimes, failedTimes, &str);//}
+				}
+				multiplyPrint.finalPrint();
+				cout<<endl;
+			}
+#endif
+			
+			// 4) GSP power of level Algorithm
+#ifdef EXPERIMENT_GSP_power_of_level_part
+			{ cout << " ----- GSP power predict rate:" <<endl;
+				cout << "base |   power |                             predict App Num & predict rate                              |" <<endl;
+				cout << "     |     Num |  1 app  |  2 app  |  3 app  |  4 app  |  5 app  |  6 app  |  7 app  |  8 app  |  9 app  |" <<endl;
+				//{ parameter initial | method: weight = base + powerNum ^ level(0~n)
+				double base = 1;
+				double powerNum = 900;
+				double powerNumMax = 900;
+				double powerGrow = 1;
+				printExperiment powerPrint(maxPredictApp);//}
+				
+				for (powerNum; powerNum <= powerNumMax; powerNum+=powerGrow) {
+					//{ initial
+					failedTimes = 0;
+					for (int i=0; i<maxPredictApp; i++) {
+						successTimes[i] = 0;
+					}//}
+					
+					//{ predict
+					double parameter[2];
+					parameter[0] = base;
+					parameter[1] = powerNum;
+					for (int i=maxBackApp; i<testDMEventPoint.size()-1; i++) {
+						Sequence shortSeq = buildShortSequence(i, maxBackApp, &testDMEventPoint);
+						
+						// 預測和記錄
+						PredictResult result = gspPredict.predictResult_byMethod(GSP_Predict::powerOfLevel, parameter, &shortSeq, maxPredictApp);
+						int predictNum = result.predict(testDMEventPoint.at(i+1), maxPredictApp); // (ps: reallyUseApp, maxPredictApp)
+						if (predictNum == PredictResult::PREDICT_MISS) {
+							failedTimes++;
+						} else {
+							successTimes[predictNum-1]++;
+						}
+					}//}
+					
+					//{ output
+					char outChar[64];
+					snprintf(outChar, 64, "%.2f | %.5f | ", base, powerNum);
+					string str = string(outChar);
+					powerPrint.printImportant(successTimes, failedTimes, &str);//}
+				}
+				powerPrint.finalPrint();
+				cout<<endl;
+			}
+#endif
+			
+			// 5) LRU
+#ifdef EXPERIMENT_LRU_part
+			{ cout << " ----- LRU predict:" <<endl;
+				//{ initial
+				failedTimes = 0;
+				for (int i=0; i<maxPredictApp; i++) {
+					successTimes[i] = 0;
+				}//}
+				
+				//{ predict
+				for (int i=maxBackApp; i<testDMEventPoint.size()-1; i++) {
+					int reallyUseApp = testDMEventPoint.at(i+1);
+					for (int j=1; j<maxBackApp+1 && j<maxPredictApp+1; j++) {
+						if (testDMEventPoint.at(i-j) == reallyUseApp) {
+							successTimes[j-1]++;
+							break;
+						} else if (j == maxBackApp || j == maxPredictApp) {
+							failedTimes++;
+						}
+					}
+				}//}
+				
+				//{ output
+				printExperiment::print(successTimes, failedTimes, maxPredictApp, true);
+				cout<<endl;//}
+			}
+#endif
+			
+			// 6) MFU
+#ifdef EXPERIMENT_MFU_part
+			{ cout << " ----- MFU predict:" <<endl;
+				//{ initial
+				failedTimes = 0;
+				for (int i=0; i<maxPredictApp; i++) {
+					successTimes[i] = 0;
+				}//}
+				
+				//{ 整理 sequence
+				Sequence shortSeq;
+				Itemset tmpItem;
+				tmpItem.item.push_back(30000);
+				shortSeq.itemset.push_back(tmpItem);//}
+				
+				//{ predict
+				double parameter[1];
+				parameter[0]=0;
+				PredictResult result = gspPredict.predictResult_byMethod(GSP_Predict::ConstLevel, parameter, &shortSeq, maxPredictApp);
+				for (int i=maxBackApp; i<testDMEventPoint.size()-1; i++) {
+					// 預測和記錄
+					int predictNum = result.predict(testDMEventPoint.at(i+1), maxPredictApp); // (ps: reallyUseApp, maxPredictApp)
+					if (predictNum == PredictResult::PREDICT_MISS) {
+						failedTimes++;
+					} else {
+						successTimes[predictNum-1]++;
+					}
+				}//}
+				
+				//{ output
+				printExperiment::print(successTimes, failedTimes, maxPredictApp, true);
+				cout<<endl;//}
+			}
+#endif
+			
 		}
 		
 		/** 建立 sequence 方便搜尋和預測
@@ -717,26 +780,7 @@ class DataMining {
 			}
 			//shortSeq.Output();
 			return shortSeq;
-		}
-		
-		/** 將 training、test 中連續一樣的資料刪掉
-		 *  以免後面出現使用連續兩個一樣的 APP
-		 */
-		void removeSameAction(vector<int> *DMEventPoint) {
-			vector<int>::iterator lastIter = DMEventPoint->begin();
-			vector<int>::iterator thisIter = DMEventPoint->begin();
-			thisIter++;
-			while (thisIter != DMEventPoint->end()) {
-				if (*lastIter != *thisIter) {
-					// 不一樣的話沒事
-					lastIter = thisIter;
-					thisIter++;
-				} else {
-					// 一樣的話要刪掉 thisIter
-					thisIter = DMEventPoint->erase(thisIter);
-				}
-			}
-		}
+		}//}
 		
 		/** (bug)
 		 * 目前發現會不小心將螢幕暗著的時候也記錄進去

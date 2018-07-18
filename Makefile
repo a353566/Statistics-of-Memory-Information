@@ -1,33 +1,36 @@
 TARGETS = Main
-#RNNLIB = /home/mason/rnnlib/rnn/include/
-#libnetcdf_c++.so = /home/mason/rnnlib/rnn/lib/libnetcdf_c++.so
+TOOL = include/tool/DateTime.o include/tool/StringToNumber.o
+GSPMINING = include/GSPMining/GSP.o
 # 設定變數 之後用 $(xxx)即可以使用
+
+all: clean $(TARGETS) my
+# ./xxx 是順便執行
+
+my:
+	./$(TARGETS) ./data/my_0311_0530/
+
+u2:
+	./$(TARGETS) ./data/u2_0313_0324/
+	
+u4:
+	./$(TARGETS) ./data/u4_0313_0404/
 
 .PHONY: clean
 # 表示 "clean" 不是一個真正的檔案目標，只是一個標記
-
-all: u2
-# ./xxx 是順便執行
-
 clean:
 	rm -f $(TARGETS)
 
-my: clean $(TARGETS)
-	./$(TARGETS) ./data/my_0311_0530/
-
-u2: clean $(TARGETS)
-	./$(TARGETS) ./data/u2_0313_0324/
-	
-u4: clean $(TARGETS)
-	./$(TARGETS) ./data/u4_0313_0404/
-
-$(TARGETS): $(TARGETS).cpp
+$(TARGETS): $(TARGETS).cpp $(TOOL) $(GSPMINING)
+	g++ -o $@ $^ -std=c++11
 #	g++ -o $@ -I$(RNNLIB) $^ $(libnetcdf_c++.so)
-	g++ -o $@ $^
 # -I/aaa/bbb 以"/aaa/bbb"當lib的目錄
+# -std=c++11   -> for "auto"
+
+%.o: %.cpp
+	g++ -o $@ -c $^ -O3 -std=c++11
 
 %: %.cpp
-	g++ -o $@ $^
+	g++ -o $@ $^ -std=c++11
 # -o xxx 表示以 xxx 當輸出檔名
 # out: in1.c in2.c
 # $@ 表示"目標檔名" (out)

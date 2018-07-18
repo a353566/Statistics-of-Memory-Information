@@ -4,7 +4,6 @@
 #include <vector>
 #include <iostream>
 
-#include "Sequence.hpp"
 using namespace std;
 
 typedef int elemType;

@@ -62,8 +62,8 @@ int main(int argc, char** argv) {
   mergeFile.merge(&collectFileVec);
   mergeFile.buildEventVec();
   // 將 mergeFile 中的 allEventVec appNameVec 給 dataMining 去整理
-  dataMining.mining(&mergeFile.allEventVec, &mergeFile.allAppNameVec);
-  
+  dataMining.build(&mergeFile.allEventVec, &mergeFile.allAppNameVec);
+  dataMining.experiment();
   cout << "  over" <<endl;
   return 0;
 }

@@ -5,9 +5,9 @@
 #include <iostream>
 #include <complex>
 
-#include "../Sequence.hpp"
-#include "../PredictResult.hpp"
 #include "GSP.hpp"
+#include "Sequence.hpp"
+#include "../PredictResult.hpp"
 
 //#define GSP_PREDICT_HPP_debug_output_countAppMap // 輸出 countAppMap 排序結果
 
