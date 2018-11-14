@@ -11,7 +11,6 @@
 #include <iostream>
 
 #include "Sequence.hpp"
-#include "../PredictResult.hpp"
 using namespace std;
 
 //#define GSP_tree_PredictResult
@@ -51,7 +50,7 @@ void GSP::Mining() {
 	{
 		candidateSet = JoinPhase(&candidateSet);
 		if(candidateSet.size() == 0) {
-			cout << "No further " << k-1 << "-frequency patterns." << endl;
+			//cout << "No further " << k-1 << "-frequency patterns." << endl;
 			break;
 		} else {
 			miningPatternsMap[k] = candidateSet;
@@ -237,39 +236,48 @@ void GSP::Filter(const vector<int> *filterVec) {
 }
 
 // Output k-th candidateSet.
-void GSP::Output(const vector<Sequence> *candidateSet, int id) {
+void GSP::Output( vector<Sequence> *candidateSet, int level) {
 	int len = candidateSet->size();
-	if(len != 0)
-		cout << id << "-frequency candidate set" << endl;
-	
-	for(int k = 0; k < len; k ++)
-	{
-		cout << "<";
-		for(int i = 0; i < (*candidateSet)[k].itemset.size(); i ++)
-		{
-			cout << "(";
-			for(int j = 0; j < (*candidateSet)[k].itemset[i].item.size(); j ++)
-			{
-				cout << (*candidateSet)[k].itemset[i].item[j] << " ";
-			}
-			cout << ")";
+	if(len != 0) {
+		cout << level << "-frequency candidate set" << endl;
+		
+		multimap<int ,Sequence*> topMap;
+		for (auto iter = candidateSet->begin(); iter!=candidateSet->end(); iter++) {
+			topMap.insert(make_pair(iter->num, &(*iter)));
 		}
-		cout << ">:  ";
-		cout << (*candidateSet)[k].num << endl;
+		
+		for (auto iter = topMap.rbegin(); iter!=topMap.rend(); iter++) {
+			printf("%4d : <", iter->first);
+			
+			for(int i = 0; i < iter->second->itemset.size(); i ++) {
+				for(int j = 0; j < iter->second->itemset[i].item.size(); j ++) {
+					printf("%3d ", iter->second->itemset[i].item[j]);
+				}
+				if (i+1 < iter->second->itemset.size()) {
+					cout << ",";
+				}
+			}
+			cout << ">\n";
+		}
+		cout << endl;
 	}
-	cout << endl;
 }
 
 // 將 appCountMap 和 miningPatternsMap 一起輸出
 void GSP::OutputAll() {
-	// 1-frequent
 	cout << "min_support = " << min_support << endl;
-	cout << "1-frequent candidate set" << endl;
-	for(map<elemType, int>::iterator iter = appCountMap.begin(); iter != appCountMap.end(); iter ++)
-		printf("<%d>:  %d\n", iter->first, iter->second);
-	cout << endl;
 	
-	// 2~end-lever frequent
+	//{ 1-frequent
+	multimap<int ,elemType> countMap;
+	for(map<elemType, int>::iterator iter = appCountMap.begin(); iter != appCountMap.end(); iter++)
+		countMap.insert(make_pair(iter->second, iter->first));
+	cout << "1-frequent candidate set" << endl;
+	for(multimap<int ,elemType>::reverse_iterator iter = countMap.rbegin(); iter != countMap.rend(); iter++)
+		printf("%4d : <%3d>\n", iter->first, iter->second);
+	cout << endl;//}
+	
+	//{ 2~end-lever frequent
+	multimap<int ,Sequence*> topMap;
 	for(int lever = 2;; lever ++) {
 		map<int, vector<Sequence> >::iterator iter = miningPatternsMap.find(lever);
 		if(iter != miningPatternsMap.end()) {
@@ -278,10 +286,10 @@ void GSP::OutputAll() {
 			cout << "No further " << lever-1 << "-frequency patterns." << endl;
 			break;
 		}
-	}
+	}//}
 }
 
-void GSP::OutpurAllTop() {
+void GSP::OutputAllTop() {
 	multimap<int ,Sequence*> topMap;
 	
 	// 收集

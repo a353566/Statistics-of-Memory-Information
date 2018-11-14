@@ -17,7 +17,7 @@ class DateTime {
     int second;
     
     void initial();
-    
+    void initial_hour(int hours);
 		void initial_Day(int days);
 		
     bool setAllDateTime(std::string fileDate);

@@ -6,6 +6,12 @@
 
 //#define MAIN_debug_File_name
 
+// ----- 時間間隔實驗 (hour)
+//#define MAIN_Interval_time
+
+// ----- 取消所有多餘細節的顯示
+#define CANCEL_MORE_DETAIL_OUTPUT
+
 #include "include/CollectionFile.hpp"
 #include "include/MergeFile.hpp"
 #include "include/DataMiningExperiment.hpp"
@@ -14,11 +20,8 @@ using namespace std;
 int getdir(string dir, vector<string> &files);   // 取得資料夾中檔案的方法
 
 int main(int argc, char** argv) {
-	//{ ----- initial
+	//{ ----- files initial
   vector<string> files;
-  vector<CollectionFile> collectFileVec; // 所有檔案的 vector
-  MergeFile mergeFile;      // 整理所有資料
-  DataMining dataMining;
   // 取出檔案，並判斷有沒有問題
   string folder = (argc == 2) ? string(argv[1]):string(".");	// 資料夾路徑(絕對位址or相對位址) 拿參數給予的目的地
   if (getdir(folder, files) == -1) {
@@ -27,6 +30,7 @@ int main(int argc, char** argv) {
   }//}
 
   // 整理所有檔案內容
+  vector<CollectionFile> collectFileVec; // 所有檔案的 vector
   for(int i=0; i<files.size(); i++) {
     CollectionFile oneFile(folder, files[i]);
     //{ ----- check file name
@@ -56,15 +60,34 @@ int main(int argc, char** argv) {
 #endif
 	
   // 輸出數量
+#ifndef CANCEL_MORE_DETAIL_OUTPUT
   cout << "收集了多少" << collectFileVec.size() << "檔案" <<endl;
-  
-  // 將檔案給 mergeFile 整理成可讓 dataMining 讀的資料
+#endif  
+	
+  // 將檔案給 mergeFile 整理成 dataMining 可以讀的資料
+  MergeFile mergeFile;      // 整理所有資料
   mergeFile.merge(&collectFileVec);
   mergeFile.buildEventVec();
+	
   // 將 mergeFile 中的 allEventVec appNameVec 給 dataMining 去整理
-  dataMining.build(&mergeFile.allEventVec, &mergeFile.allAppNameVec);
-  dataMining.experiment();
-  cout << "  over" <<endl;
+	// 並且開始時實驗
+#ifdef MAIN_Interval_time
+	while (true) {
+		DataMining dataMining;
+		dataMining.build(&mergeFile.allEventVec, &mergeFile.allAppNameVec);
+		dataMining.experiment();
+	}
+#else
+	DataMining dataMining;
+	dataMining.build(&mergeFile.allEventVec, &mergeFile.allAppNameVec);
+	dataMining.experiment();
+#endif
+
+#ifndef CANCEL_MORE_DETAIL_OUTPUT
+  cout << " ┌------┐\n" <<
+	        " | over |\n" <<
+					" └------┘"   <<endl;
+#endif
   return 0;
 }
 

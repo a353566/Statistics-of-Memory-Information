@@ -34,6 +34,16 @@ struct Sequence {
 		}
 		cout << ">" <<endl;
 	}
+	
+	void operator += (const elemType &elem) {
+		Itemset tmpItem;
+		tmpItem.item.push_back(elem);
+		itemset.push_back(tmpItem);
+	}
+	
+	void operator += (const Itemset &item) {
+		itemset.push_back(item);
+	}
 };
 
 #endif /* SEQUENCE_HPP */

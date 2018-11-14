@@ -3,17 +3,17 @@ TOOL = include/tool/DateTime.o include/tool/StringToNumber.o
 GSPMINING = include/GSPMining/GSP.o
 # 設定變數 之後用 $(xxx)即可以使用
 
-all: clean $(TARGETS) my
-# ./xxx 是順便執行
-
-my:
+my: all
 	./$(TARGETS) ./data/my_0311_0530/
 
-u2:
+u2: all
 	./$(TARGETS) ./data/u2_0313_0324/
 	
-u4:
+u4: all
 	./$(TARGETS) ./data/u4_0313_0404/
+
+all: clean $(TARGETS)
+# ./xxx 是順便執行
 
 .PHONY: clean
 # 表示 "clean" 不是一個真正的檔案目標，只是一個標記
@@ -21,7 +21,7 @@ clean:
 	rm -f $(TARGETS)
 
 $(TARGETS): $(TARGETS).cpp $(TOOL) $(GSPMINING)
-	g++ -o $@ $^ -std=c++11
+	g++ -o $@ $^ -O3 -std=c++11
 #	g++ -o $@ -I$(RNNLIB) $^ $(libnetcdf_c++.so)
 # -I/aaa/bbb 以"/aaa/bbb"當lib的目錄
 # -std=c++11   -> for "auto"

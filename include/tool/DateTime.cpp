@@ -15,6 +15,24 @@ void DateTime::initial() {
 	second = 0;
 }
 
+void DateTime::initial_hour(int hours) {
+	initial();
+	hour = hours;
+	
+	while (hour >= 24) {
+		hour -= 24;
+		day++;
+		if (day > MonthDay()) {
+			day = day - MonthDay();
+			month++;
+			if (month==12) {
+				year++;
+				month = 0;
+			}
+		}
+	}
+}
+
 void DateTime::initial_Day(int days) {
 	initial();
 	day = days;

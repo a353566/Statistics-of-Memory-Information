@@ -28,7 +28,7 @@ using namespace std;
 //#define MERGEFILE_debug_Event_happen_times
 //#define MERGEFILE_debug_oomAdj_less_than_0
 //#define MERGEFILE_debug_oomAdj_rate_onEachApp
-//#define MERGEFILE_debug_adj_score_relation
+#define MERGEFILE_debug_adj_score_relation
 //#define MERGEFILE_debug_IntervalTime
 
 /** Event : record interesting Point
@@ -700,11 +700,11 @@ class MergeFile {
 			// 4. find out oom_score & oom_adj relation : 找出 oom_score & oom_adj 差別
 #ifdef MERGEFILE_debug_adj_score_relation
 			{ //string findName("android.process.media");
-				//string findName("jp.co.hit_point.tabikaeru");
+				string findName("jp.co.hit_point.tabikaeru");
 				//string findName("com.madhead.tos.zh");
 				//string findName("com.nianticlabs.pokemongo");
 				//string findName("com.google.android.apps.translate");
-				string findName("com.facebook.orca:videoplayer");
+				//string findName("com.facebook.orca:videoplayer");
 				int appNameID = -1;
 				for (int i=0; i<allAppNameVec.size(); i++) {
 					if (allAppNameVec[i].compare(0, findName.size(), findName) == 0) {
@@ -716,18 +716,20 @@ class MergeFile {
 				if (appNameID == -1) {
 					cout << "(error) check part::oom_score & oom_adj: Can't find check App Name!!!" <<endl;
 				} else {
-					cout << "Find out!! " << appNameID << ":" << allAppNameVec[appNameID] <<endl;
+					cout << "Done\n" << appNameID << ":" << allAppNameVec[appNameID] <<endl;
 					// 有找到則輸出所有的 oom_adj & oom_score
 					bool isFind = false;
 					for (vector<Point>::iterator onePoint = allPatternVec.begin();
-							 onePoint != allPatternVec.end(); onePoint++)
+							onePoint != allPatternVec.end(); onePoint++)
 					{
 						AppInfo *checkApp = onePoint->getAppWithNamePoint(appNameID);
 						if (checkApp != NULL) {
 							isFind = true;
+							onePoint->date.output();
 							printf("%3d|%6d\n", checkApp->oom_adj, checkApp->oom_score);
 						} else if (isFind) {
 							isFind = false;
+							onePoint->date.output();
 							cout << "out|out" <<endl;
 						}
 					}

@@ -19,50 +19,259 @@ using namespace std;
 
 // ----- "interval day" of training & test -----
 #define PIN_TESTEND_ON_DATAEND
-//#define TRAINING_INTERVAL_DAY 75
-//#define TEST_INTERVAL_DAY 0
 #define TRAINING_INTERVAL_DAY 14
 #define TEST_INTERVAL_DAY 7
 
+int TRAINING_INTERVAL_HOUR = 1;
+
 // ----- experiment part -----
+#define EXPERIMENT_ram 10
 //#define EXPERIMENT_GSP_normal_part
 //#define EXPERIMENT_GSP_const_level_part
 //#define EXPERIMENT_GSP_multiply_of_level_part
 //#define EXPERIMENT_GSP_power_of_level_part
 //#define EXPERIMENT_LRU_part
 //#define EXPERIMENT_MFU_part
+//#define EXPERIMENT_RAM_part
+
+//#define EXPERIMENT_GSP_normal_and_power_compare // xxx)
 
 class DataMining {
   public :
-		// 將結果印出，主要是避開輸出重複的資料
-		class printExperiment {
+		// 將結果印出，連續輸出的話可以避開輸出重複的資料
+		class Experiment {
 			public :
+				class Memory {
+					public :
+						const static int empty = -1;
+						int ram;
+						int appSize;
+						elemType nowUseApp;
+						elemType *keepApps;
+						elemType extraApp;
+						
+						int successTimes;
+						int failTimes;
+						
+						Memory() {
+							ram = EXPERIMENT_ram;
+							keepApps = new elemType[ram];
+							initial();
+						}
+						
+						Memory(int ram) {
+							this->ram = ram;
+							keepApps = new elemType[ram];
+							initial();
+						}
+						
+						void initial() {
+							appSize = 0;
+							nowUseApp = empty;
+							extraApp = empty;
+							for (int i=0; i<ram; i++) {
+								keepApps[i] = empty;
+							}
+							successTimes = 0;
+							failTimes = 0;
+						}
+						
+						int fullMemory(vector<elemType> *testDMEventPoint, int seqPoint) {
+							int head = 0;
+							do {
+								int i;
+								for (i=head; true; i++) {// (bug) 沒有特別觀察最多可以放幾個
+									if (!addUseApp(testDMEventPoint->at(i))) {
+										break;
+									}
+								}
+								if (head<seqPoint) {
+									initial();
+									head++;
+								} else {
+									successTimes = 0;
+									failTimes = 0;
+									return i;
+								}
+							} while(true); 
+						}
+						
+						bool addUseApp(elemType app) {
+							if (nowUseApp == app) {
+								cout << "(error) Memory::addUseApp(): The same nowUseApp" <<endl;
+								return true;
+							}
+							
+							// 看有沒有 hit
+							int which = at(app);
+							if (which != empty) {
+								keepApps[which] = nowUseApp;
+								nowUseApp = app;
+								successTimes++;
+								return true;
+							}
+							
+							if (appSize<ram) {
+								keepApps[at(empty)] = nowUseApp;
+								nowUseApp = app;
+								appSize++;
+								return true;
+							}
+							
+							// 確實 miss
+							if (extraApp == empty) {
+								extraApp = nowUseApp;
+								nowUseApp = app;
+								failTimes++;
+								return false;
+							} else {
+								cout << "(error) Memory::addUseApp(): extraApp isn't empty" <<endl;
+								return false;
+							}
+						}
+						
+						bool update(PredictResult *result) {
+							if (extraApp == empty) {
+								return false;
+							} else {
+								multimap<int, elemType> importantMap;
+								int important = result->predict(extraApp);
+								importantMap.insert(make_pair(important, extraApp));
+								for (int i=0; i<ram; i++) {
+									important = result->predict(keepApps[i]);
+									importantMap.insert(make_pair(important, keepApps[i]));
+								}
+								
+								printf("%4d: ", failTimes);
+								auto app = importantMap.begin();
+								for (int i=0; i<ram; i++) {
+									printf("%6d:%3d |", app->first, app->second);
+									keepApps[i] = app->second;
+									app++;
+								}
+								printf("  |  %6d:%3d\n", app->first, app->second);
+								extraApp = empty;
+								
+								return true;
+							}
+						}
+						
+						int at(elemType app) {
+							for (int i=0; i<ram; i++) {
+								if (keepApps[i] == app) {
+									return i;
+								}
+							}
+							return empty;
+						}
+						
+						void print() {
+							int totalTimes = successTimes + failTimes;
+							printf("%1.5f | %4d | ", (double)successTimes/totalTimes, totalTimes);
+						}
+						
+				};
+				
 				string preStr;
-				int *successTimes;
-				int failedTimes;
+				int maxBackApp;
 				int maxPredictApp;
-				bool printTitle;
-				printExperiment(int maxPredictApp) {
+				int failedTimes;
+				int *successTimes;
+				
+				int seqPoint;
+				vector<elemType> *testDMEventPoint;
+				bool recordMem;
+				Memory memory;
+				Experiment(int maxBackApp, int maxPredictApp) {
+					this->maxBackApp = maxBackApp;
 					this->maxPredictApp = maxPredictApp;
-					successTimes = new int[maxPredictApp];
+					recordMem = false;
+					initial();
+				}
+				
+				Experiment(int maxBackApp, int maxPredictApp, vector<elemType> *testDMEventPoint) {
+					this->maxBackApp = maxBackApp;
+					this->maxPredictApp = maxPredictApp;
+					this->testDMEventPoint = testDMEventPoint;
+					recordMem = false;
+					initial();
+				}
+				
+				Experiment(int maxBackApp, int maxPredictApp, vector<elemType> *testDMEventPoint, int ram) {
+					this->maxBackApp = maxBackApp;
+					this->maxPredictApp = maxPredictApp;
+					this->testDMEventPoint = testDMEventPoint;
+					recordMem = true;
+					memory = Memory(ram);
 					initial();
 				}
 				
 				void initial() {
 					preStr.clear();
 					failedTimes = 0;
-					for (int i=0; i<maxPredictApp; i++)
+					successTimes = new int[maxPredictApp];
+					for (int i=0; i<maxPredictApp; i++) {
 						successTimes[i] = 0;
+					}
+					seqPoint = maxBackApp;
+					if (recordMem) {
+						buildMemory();
+					}
+				}
+				
+				void buildMemory() {
+					// 裝滿記憶體。如果太多的話，回傳給 seqPoint
+					seqPoint = memory.fullMemory(testDMEventPoint, seqPoint);
+				}
+				
+				// 看有沒有下一個
+				bool next() {
+					seqPoint++;
+					return seqPoint<testDMEventPoint->size()-1;  // -1是要被預測的那一個
+				}
+				
+				// return shortSeq
+				Sequence buildShortSeq() {
+					Sequence shortSeq;
+					// 整理 sequence
+					int start = seqPoint>=maxBackApp ? seqPoint-maxBackApp : 0;
+					for (start; start<=seqPoint; start++) {
+						shortSeq += testDMEventPoint->at(start);
+					}
+					return shortSeq;
+				}
+				
+				// 更新預測資料
+				int updatePrediction(PredictResult *result) {
+					int predictApp = PredictResult::PREDICT_MISS;
+					elemType reallyUseApp = testDMEventPoint->at(seqPoint+1);
+					// 依照 result 更新記憶體
+					if (recordMem) {
+						memory.update(result);
+						memory.addUseApp(reallyUseApp);
+					}
+					
+					int predict = result->predict(reallyUseApp, maxPredictApp);
+					if (predict == PredictResult::PREDICT_MISS) {
+						failedTimes++;
+					} else {
+						successTimes[predict-1]++;
+						predictApp = predict;
+					}
+					return predictApp;
 				}
 				
 				/** 將結果印出 只印出有改變的兩段資訊
 				 *  1. 檢查有沒有變化
 				 *  1.true  : 有則輸出，並記錄 newSuccessTimes、newFailedTimes 到自己的資料
 				 *  1.false : preStr <= newPreStr
-				 *  參數同上 (printExperiment)
+				 *  參數同上 (Experiment)
 				 *   | successTimes : 成功的次數，可以往後讀 maxPredictApp 個
 				 *   | failedTimes : 往回 maxPredictApp 個都沒有命中
 				 */
+				void printImportant(Experiment *experiment, string *newPreStr) {
+					printImportant(experiment->successTimes, experiment->failedTimes, newPreStr);
+				}
 				void printImportant(int *newSuccessTimes, int newFailedTimes, string *newPreStr) {
 					// 1. 檢查有沒有變化
 					bool change = false;
@@ -102,28 +311,15 @@ class DataMining {
 				 */
 				void print(string *str) {
 					cout << *str;
-					print(successTimes, failedTimes, maxPredictApp, false);
+					print(false);
 				}
-				
-				/** 主要是印出最後的資料
-				 */
-				void finalPrint() {
-					// check this data isn't print
-					if (!preStr.empty()) {
-						print(&preStr);
-						preStr.clear();
-					}
+				void print() {
+					print(true);
 				}
-				
-				/** (static) 將結果印出
-				 *  successTimes : 成功的次數，可以往後讀 maxPredictApp 個
-				 *  failedTimes : 往回 maxPredictApp 個都沒有命中
-				 *  maxPredictApp : 總共預測幾個
-				 */
-				static void print(int *successTimes, int failedTimes, int maxPredictApp, bool printTitle) {
+				void print(bool printTitle) {
 					if (printTitle) {
-						cout << "                             predict App Num & predict rate                             |" <<endl;
-						cout << " 1 app  |  2 app  |  3 app  |  4 app  |  5 app  |  6 app  |  7 app  |  8 app  |  9 app  |" <<endl;
+						cout << "    predict App Num & predict rate     " <<endl;
+						cout << " 1 app  |  2 app  |  3 app  | .......  " <<endl;
 					}
 					
 					// 算全部 totalTimes
@@ -141,24 +337,37 @@ class DataMining {
 					}
 					cout<<endl;
 				}
+				void memoryPrint() {
+					memory.print();
+				}
+				/** 主要是印出最後的資料
+				 */
+				void finalPrint() {
+					// check this data isn't print
+					if (!preStr.empty()) {
+						print(&preStr);
+						preStr.clear();
+					}
+				}
+				
 		};
 		
     string screen_turn_on;
     string screen_turn_off;
     string screen_long_off;
-    int EPscreen_turn_on;
-    int EPscreen_turn_off;
-    int EPscreen_long_off;
+    elemType EPscreen_turn_on;
+    elemType EPscreen_turn_off;
+    elemType EPscreen_long_off;
     DateTime intervalTime;
-    vector<int> trainingDMEventPoint;
-    vector<int> testDMEventPoint;
+    vector<elemType> trainingDMEventPoint;
+    vector<elemType> testDMEventPoint;
     vector<string> DMEPtoEvent; // Data Mining Each Point to Event
 		
     DataMining() {
       screen_turn_on = string("screen turn on");
       screen_turn_off = string("screen turn off");
       screen_long_off = string("screen long off");
-      // 看螢幕"暗著"的時間間隔 // mason
+      // 看螢幕"暗著"的時間間隔
       intervalTime.initial();
       intervalTime.hour = 1;
     }
@@ -182,23 +391,13 @@ class DataMining {
 
 			//{ ----- 2. Segment eventVec into screenPattern that the screen is "ON" : 主要是將 screen 亮著的區間做間隔
       vector<pair<int, int> > screenPattern = segmentScreenPattern(eventVec);
+
+#ifndef CANCEL_MORE_DETAIL_OUTPUT
 			cout << "Screen on->off interval have (" << screenPattern.size() << ") times" <<endl;//}
-			
+#endif
+
 			// ----- 3. Divide eventVec into two data : 將 screenPattern 用時間分成 training test 兩份
 			buildData(&screenPattern, eventVec);
-			
-			// (mason)
-			/*int count[200];
-			for (int i=0; i<200; i++) {
-				count[i]=0;
-			}
-			for (auto onePoint = trainingDMEventPoint.begin(); onePoint != trainingDMEventPoint.end(); onePoint++) {
-				count[*onePoint]++;
-				//cout << *onePoint <<endl;
-			}
-			for (int i=0; i<200; i++) {
-				cout << i << "|" << count[i] <<endl;
-			}*/
     }
 		
 		/** 利用螢幕分隔(screenPattern)來切成兩個時間段
@@ -219,7 +418,13 @@ class DataMining {
 			int testStart = 0;
 			int testEnd = screenPattern->size()-1;
 			DateTime TrainingIT, TestIT; // 設定 training & test data 要多久 (ps: IT = interval time)
+			
+#ifdef MAIN_Interval_time
+			TrainingIT.initial_hour(TRAINING_INTERVAL_HOUR++);
+#else
 			TrainingIT.initial_Day(TRAINING_INTERVAL_DAY);
+#endif
+			
 			TestIT.initial_Day(TEST_INTERVAL_DAY);//}
 			
 			// ----- 1. defind Start & End on two data : 找出兩種資料的開頭和結尾
@@ -273,6 +478,7 @@ class DataMining {
       buildDMEventPoint(&testDMEventPoint, &testScnPatn, eventVec);//}
 			
 			//{ output
+#ifndef CANCEL_MORE_DETAIL_OUTPUT
 			cout << "Training action data is between ";
 			eventVec->at(screenPattern->at(trainingStart).first).thisDate->output();
 			cout << " and\n                                ";
@@ -283,7 +489,8 @@ class DataMining {
 			eventVec->at(screenPattern->at(testStart).first).thisDate->output();
 			cout << " and\n                            ";
 			eventVec->at(screenPattern->at(testEnd).second).thisDate->output();
-			cout << "\nTest data mining event point have (" << testDMEventPoint.size() << ") times" <<endl;//}
+			cout << "\nTest data mining event point have (" << testDMEventPoint.size() << ") times" <<endl;
+#endif//}
 		}
 		
     /** 如果有遇到一次發現多的 app 執行的話
@@ -293,7 +500,7 @@ class DataMining {
      *  usePattern : The data is according to the Screen Changed.
      *  eventVec : Event data
      */
-		void buildDMEventPoint(vector<int> *DMEventPoint, vector<pair<int, int> > *usePattern, vector<Event> *eventVec) {
+		void buildDMEventPoint(vector<elemType> *DMEventPoint, vector<pair<int, int> > *usePattern, vector<Event> *eventVec) {
       // 用 usePattern 來取出
       for (vector<pair<int, int> >::iterator useInterval = usePattern->begin();
 			     useInterval != usePattern->end(); useInterval++) {
@@ -347,20 +554,20 @@ class DataMining {
       }
 			
 			// ----- final. remove the same action
-			//removeSameAction(DMEventPoint);
+			removeSameAction(DMEventPoint);
     }
 		
 		/** 將 training、test 中連續一樣的資料刪掉
 		 *  以免後面出現使用連續兩個一樣的 APP
 		 */
-		void removeSameAction(vector<int> *DMEventPoint) {
-			vector<int>::iterator lastIter = DMEventPoint->begin();
-			vector<int>::iterator thisIter = DMEventPoint->begin();
+		void removeSameAction(vector<elemType> *DMEventPoint) {
+			vector<elemType>::iterator lastIter = DMEventPoint->begin();
+			vector<elemType>::iterator thisIter = DMEventPoint->begin();
 			thisIter++;
 			while (thisIter != DMEventPoint->end()) {
 				if (*lastIter != *thisIter) {
 					// 不一樣的話沒事
-					lastIter = thisIter;
+					lastIter++;
 					thisIter++;
 				} else {
 					// 一樣的話要刪掉 thisIter
@@ -410,7 +617,7 @@ class DataMining {
 		 */
 		vector<pair<int, int> > segmentScreenPattern(vector<Event> *eventVec) {
 			vector<pair<int, int> > screenPattern;
-      // 看螢幕"暗著"的時間間隔 // mason
+      // 看螢幕"暗著"的時間間隔
       pair<int, int> onePattern = make_pair(0,0);
       int pI = 0;
       // PI 有起頭之後就用 while 跑
@@ -454,15 +661,17 @@ class DataMining {
 		 *   | 4) GSP power of level Algorithm
 		 *   | 5) LRU
 		 *   | 6) MFU
+		 *   | 7) RAM
+		 *   | xxx) GSP normal & power compare
 		 */ //{
 		void experiment() {
       //{ ----- 1. GSP sequential patterns mining
 			//int min_support = trainingDMEventPoint.size()/200; // (0.5%)
 			int min_support = 2;
-			cout << "min_support: " << min_support <<endl;
+			//cout << "min_support: " << min_support <<endl;
       GSP gsp(trainingDMEventPoint, min_support);
       gsp.Mining();
-			vector<int> filterVec;
+			vector<elemType> filterVec;
 			filterVec.push_back(EPscreen_turn_on);
 			filterVec.push_back(EPscreen_turn_off);
 			//filterVec.push_back(EPscreen_long_off);
@@ -470,42 +679,31 @@ class DataMining {
 			
 			// (print) GSP statistics
 			//gsp.OutputAll();
-			//gsp.OutpurAllTop();//}
+			//gsp.OutputAllTop();//}
 			
 			// ----- 2. Experiment 
 			//{ initial
 			GSP_Predict gspPredict(&gsp);
 			const int maxBackApp = 9;
-			const int maxPredictApp = 9;
+			const int maxPredictApp = 200;
 			int failedTimes;
-			int successTimes[maxPredictApp];
-			cout<<endl;//}
+			int successTimes[maxPredictApp];//}
 			
 			// 1) GSP normal Algorithm
 #ifdef EXPERIMENT_GSP_normal_part
 			{ cout << " ----- GSP normal predict:" <<endl;
-				//{ initial
-				failedTimes = 0;
-				for (int i=0; i<maxPredictApp; i++) {
-					successTimes[i] = 0;
-				}//}
+				// initial
+				Experiment experiment(maxBackApp, maxPredictApp, &testDMEventPoint);
 				
-				//{ predict
-				for (int i=maxBackApp; i<testDMEventPoint.size()-1; i++) {
-					Sequence shortSeq = buildShortSequence(i, maxBackApp, &testDMEventPoint);
-					// 預測和記錄
+				// predict
+				do {
+					Sequence shortSeq = experiment.buildShortSeq();
 					PredictResult result = gspPredict.predictResult_normal(&shortSeq, maxPredictApp);
-					int predictNum = result.predict(testDMEventPoint.at(i+1), maxPredictApp); // (ps: reallyUseApp, maxPredictApp)
-					if (predictNum == PredictResult::PREDICT_MISS) {
-						failedTimes++;
-					} else {
-						successTimes[predictNum-1]++;
-					}
-				}//}
-				
-				//{ output
-				printExperiment::print(successTimes, failedTimes, maxPredictApp, true);
-				cout<<endl;//}
+					experiment.updatePrediction(&result);
+				} while (experiment.next());
+				// output
+				experiment.print();
+				cout<<endl;
 			}
 #endif
 			
@@ -515,9 +713,8 @@ class DataMining {
 				cout << "peep | Total   |         |                            predict rate on difference Level                             |" <<endl;
 				cout << " App | pattern |   MFU   | Level 1 | Level 2 | Level 3 | Level 4 | Level 5 | Level 6 | Level 7 | Level 8 | Level 9 |" <<endl;
 				//{ initial
-				const int maxPredictAppforSL = 1;
 				failedTimes = 0;
-				for (int i=0; i<maxPredictAppforSL; i++) {
+				for (int i=0; i<maxPredictApp; i++) {
 					successTimes[i] = 0;
 				}//}
 				
@@ -539,13 +736,13 @@ class DataMining {
 					
 					// 預測和判斷是否成功
 					for (int level=0; level<maxBackApp; level++) {
-						double parameter[1];
-						parameter[0] = level;
-						PredictResult result = gspPredict.predictResult_byMethod(GSP_Predict::ConstLevel, parameter, &shortSeq, maxPredictAppforSL);
+						double parameter = level;
+						PredictResult result = gspPredict.predictResult_byMethod(GSP_Predict::ConstLevel, &parameter, &shortSeq, maxPredictApp);
 						
 						// 檢查確實有結果才繼續，否則跳出換下一個
-						if (result.resultPairs.at(0).first != PredictResult::NO_APP) {
-							if (result.resultPairs.at(0).first == reallyUseApp) {
+						elemType predictApp = result.resultPairs.at(0).first;
+						if (predictApp != PredictResult::NO_APP) {
+							if (predictApp == reallyUseApp) {
 								predictLevelMap[i][level] = PREDICT_HEAD + 1;	// 1 : 第幾個才預測到
 							} else {
 								predictLevelMap[i][level] = PREDICT_FAIL;
@@ -559,18 +756,19 @@ class DataMining {
 				//{ 統計表格 difference level effect & output
 				for (int level=0; level<maxBackApp; level++) {
 					//{ initial
-					for (int i=0; i<maxPredictApp; i++) {
-						successTimes[i] = 0;
+					int successLevelTimes[maxBackApp];
+					for (int i=0; i<maxBackApp; i++) {
+						successLevelTimes[i] = 0;
 					}
 					vector<int> catchSeqVec; // 知道有哪些是有搜尋到的內容
-					failedTimes = 0; //}
+					failedTimes = 0;//}
 					
 					//{ 先找自己這層有多少個 & 沒有則跳出
 					for (int i=0; i<testDMEventPoint.size(); i++) {
 						if (predictLevelMap[i][level] != EMPTY) {
 							catchSeqVec.push_back(i);
 							if (predictLevelMap[i][level] != PREDICT_FAIL) {
-								successTimes[level]++;
+								successLevelTimes[level]++;
 							} else {
 								failedTimes++;
 							}
@@ -588,7 +786,7 @@ class DataMining {
 								 seqHead != catchSeqVec.end(); seqHead++)
 						{
 							if (predictLevelMap[*seqHead][downLevel] != PREDICT_FAIL) {
-								successTimes[downLevel]++;
+								successLevelTimes[downLevel]++;
 							} else {
 								failedTimes++;
 							}
@@ -599,7 +797,7 @@ class DataMining {
 					int totalPattern = catchSeqVec.size();
 					printf("%4d | %7d | ", level, totalPattern);
 					for (int i = 0; i<=level; i++) {
-						printf("%1.5f | ", (double)successTimes[i]/totalPattern);
+						printf("%1.5f | ", (double)successLevelTimes[i]/totalPattern);
 					}
 					cout<<endl;//}
 				}
@@ -610,46 +808,36 @@ class DataMining {
 			// 3) GSP multiply of level Algorithm
 #ifdef EXPERIMENT_GSP_multiply_of_level_part
 			{ cout << " ----- GSP multiply predict rate:" <<endl;
-				cout << "base | multiply |                             predict App Num & predict rate                              |" <<endl;
-				cout << "     |      Num |  1 app  |  2 app  |  3 app  |  4 app  |  5 app  |  6 app  |  7 app  |  8 app  |  9 app  |" <<endl;
+				cout << "base | multiply |     predict App Num & predict rate     " <<endl;
+				cout << "     |      Num |  1 app  |  2 app  |  3 app  | .......  " <<endl;
 				//{ parameter initial | method: weight = base + multiplyNum * level(0~n)
-				double base = 1;
-				double multiplyNum = 900;
-				double multiplyNumMax = 900;
-				double multiplyGrow = 1;
-				printExperiment multiplyPrint(maxPredictApp);//}
+				double base = 0.00000001;
+				double multiplyNum = 1;
+				double multiplyNumMax = 1;
+				double multiplyGrow =   1;
+				Experiment lastPrint(maxBackApp, maxPredictApp);//}
 				
 				for (multiplyNum; multiplyNum <= multiplyNumMax; multiplyNum+=multiplyGrow) {
-					//{ initial
-					failedTimes = 0;
-					for (int i=0; i<maxPredictApp; i++) {
-						successTimes[i] = 0;
-					}//}
+					// initial
+					Experiment experiment(maxBackApp, maxPredictApp, &testDMEventPoint);
 					
 					//{ predict
 					double parameter[2];
 					parameter[0] = base;
 					parameter[1] = multiplyNum;
-					for (int i=maxBackApp; i<testDMEventPoint.size()-1; i++) {
-						Sequence shortSeq = buildShortSequence(i, maxBackApp, &testDMEventPoint);
-						
-						// 預測和記錄
+					do {
+						Sequence shortSeq = experiment.buildShortSeq();
 						PredictResult result = gspPredict.predictResult_byMethod(GSP_Predict::multiplyOfLevle, parameter, &shortSeq, maxPredictApp);
-						int predictNum = result.predict(testDMEventPoint.at(i+1), maxPredictApp); // (ps: reallyUseApp, maxPredictApp)
-						if (predictNum == PredictResult::PREDICT_MISS) {
-							failedTimes++;
-						} else {
-							successTimes[predictNum-1]++;
-						}
-					}//}
+						experiment.updatePrediction(&result);
+					} while (experiment.next());//}
 					
 					//{ output
 					char outChar[64];
 					snprintf(outChar, 64, "%.2f | %.5f | ", base, multiplyNum);
 					string str = string(outChar);
-					multiplyPrint.printImportant(successTimes, failedTimes, &str);//}
+					lastPrint.printImportant(&experiment, &str);//}
 				}
-				multiplyPrint.finalPrint();
+				lastPrint.finalPrint();
 				cout<<endl;
 			}
 #endif
@@ -657,46 +845,40 @@ class DataMining {
 			// 4) GSP power of level Algorithm
 #ifdef EXPERIMENT_GSP_power_of_level_part
 			{ cout << " ----- GSP power predict rate:" <<endl;
-				cout << "base |   power |                             predict App Num & predict rate                              |" <<endl;
-				cout << "     |     Num |  1 app  |  2 app  |  3 app  |  4 app  |  5 app  |  6 app  |  7 app  |  8 app  |  9 app  |" <<endl;
+				cout << "base |   power |     predict App Num & predict rate     " <<endl;
+				cout << "     |     Num |  1 app  |  2 app  |  3 app  | .......  " <<endl;
 				//{ parameter initial | method: weight = base + powerNum ^ level(0~n)
-				double base = 1;
-				double powerNum = 900;
-				double powerNumMax = 900;
-				double powerGrow = 1;
-				printExperiment powerPrint(maxPredictApp);//}
+				double base = 0.00000001;
+				double powerNum = 3;
+				double powerNumMax = 3;
+				double powerGrow = 0.001;
+				Experiment lastPrint(maxBackApp, maxPredictApp);//}
 				
 				for (powerNum; powerNum <= powerNumMax; powerNum+=powerGrow) {
-					//{ initial
-					failedTimes = 0;
-					for (int i=0; i<maxPredictApp; i++) {
-						successTimes[i] = 0;
-					}//}
+					// initial
+					Experiment experiment(maxBackApp, maxPredictApp, &testDMEventPoint);
 					
 					//{ predict
 					double parameter[2];
 					parameter[0] = base;
 					parameter[1] = powerNum;
-					for (int i=maxBackApp; i<testDMEventPoint.size()-1; i++) {
-						Sequence shortSeq = buildShortSequence(i, maxBackApp, &testDMEventPoint);
-						
-						// 預測和記錄
-						PredictResult result = gspPredict.predictResult_byMethod(GSP_Predict::powerOfLevel, parameter, &shortSeq, maxPredictApp);
-						int predictNum = result.predict(testDMEventPoint.at(i+1), maxPredictApp); // (ps: reallyUseApp, maxPredictApp)
-						if (predictNum == PredictResult::PREDICT_MISS) {
-							failedTimes++;
-						} else {
-							successTimes[predictNum-1]++;
-						}
-					}//}
+					do {
+						Sequence shortSeq = experiment.buildShortSeq();
+						PredictResult result = gspPredict.predictResult_byMethod(
+						                                    GSP_Predict::powerOfLevel,
+																								parameter,
+																								&shortSeq,
+																								maxPredictApp);
+						experiment.updatePrediction(&result);
+					} while (experiment.next());//}
 					
 					//{ output
 					char outChar[64];
 					snprintf(outChar, 64, "%.2f | %.5f | ", base, powerNum);
 					string str = string(outChar);
-					powerPrint.printImportant(successTimes, failedTimes, &str);//}
+					lastPrint.printImportant(&experiment, &str);//}
 				}
-				powerPrint.finalPrint();
+				lastPrint.finalPrint();
 				cout<<endl;
 			}
 #endif
@@ -704,73 +886,232 @@ class DataMining {
 			// 5) LRU
 #ifdef EXPERIMENT_LRU_part
 			{ cout << " ----- LRU predict:" <<endl;
-				//{ initial
-				failedTimes = 0;
-				for (int i=0; i<maxPredictApp; i++) {
-					successTimes[i] = 0;
-				}//}
+				// initial
+				Experiment experiment(maxBackApp, maxPredictApp, &testDMEventPoint);
 				
-				//{ predict
-				for (int i=maxBackApp; i<testDMEventPoint.size()-1; i++) {
-					int reallyUseApp = testDMEventPoint.at(i+1);
-					for (int j=1; j<maxBackApp+1 && j<maxPredictApp+1; j++) {
-						if (testDMEventPoint.at(i-j) == reallyUseApp) {
-							successTimes[j-1]++;
-							break;
-						} else if (j == maxBackApp || j == maxPredictApp) {
-							failedTimes++;
+				// predict
+				do {
+					PredictResult result;
+					// build LRU result
+					for (int i=experiment.seqPoint-1; i>=0; i--) {
+						if (testDMEventPoint.at(experiment.seqPoint) != testDMEventPoint.at(i) && !result.checkRepeat(testDMEventPoint.at(i))) {
+							result.resultPairs.push_back(make_pair(testDMEventPoint.at(i), i));
+							if (result.size() >= maxPredictApp) {
+								break;
+							}
 						}
 					}
-				}//}
+					experiment.updatePrediction(&result);
+				} while (experiment.next());
 				
-				//{ output
-				printExperiment::print(successTimes, failedTimes, maxPredictApp, true);
-				cout<<endl;//}
+				// output
+				experiment.print();
+				cout<<endl;
 			}
 #endif
 			
 			// 6) MFU
 #ifdef EXPERIMENT_MFU_part
 			{ cout << " ----- MFU predict:" <<endl;
-				//{ initial
-				failedTimes = 0;
-				for (int i=0; i<maxPredictApp; i++) {
-					successTimes[i] = 0;
-				}//}
+				// initial
+				Experiment experiment(maxBackApp, maxPredictApp, &testDMEventPoint);
 				
-				//{ 整理 sequence
-				Sequence shortSeq;
-				Itemset tmpItem;
-				tmpItem.item.push_back(30000);
-				shortSeq.itemset.push_back(tmpItem);//}
+				// predict
+				double parameter = 0;	// level = 0
+				do {
+					Sequence shortSeq = experiment.buildShortSeq();
+					PredictResult result = gspPredict.predictResult_byMethod(
+					                                    GSP_Predict::ConstLevel,
+																							&parameter,
+																							&shortSeq,
+																							maxPredictApp);
+					experiment.updatePrediction(&result);
+				} while (experiment.next());
 				
-				//{ predict
-				double parameter[1];
-				parameter[0]=0;
-				PredictResult result = gspPredict.predictResult_byMethod(GSP_Predict::ConstLevel, parameter, &shortSeq, maxPredictApp);
-				for (int i=maxBackApp; i<testDMEventPoint.size()-1; i++) {
-					// 預測和記錄
-					int predictNum = result.predict(testDMEventPoint.at(i+1), maxPredictApp); // (ps: reallyUseApp, maxPredictApp)
-					if (predictNum == PredictResult::PREDICT_MISS) {
-						failedTimes++;
-					} else {
-						successTimes[predictNum-1]++;
-					}
-				}//}
-				
-				//{ output
-				printExperiment::print(successTimes, failedTimes, maxPredictApp, true);
-				cout<<endl;//}
+				// output
+				experiment.print();
+				cout<<endl;
 			}
 #endif
 			
+			// 7) RAM
+#ifdef EXPERIMENT_RAM_part
+// == RAM part == (only chooes one)
+//#define EXPERIMENT_RAM_part_BEST
+//#define EXPERIMENT_RAM_part_LRU
+//#define EXPERIMENT_RAM_part_MFU
+//#define EXPERIMENT_RAM_part_normal
+//#define EXPERIMENT_RAM_part_power
+#define EXPERIMENT_RAM_part_power_more_predict  // 未完成
+			{
+				//{ tital output
+#ifdef EXPERIMENT_RAM_part_BEST
+			cout << " ----- RAM experiment for BEST: ";
+#endif
+#ifdef EXPERIMENT_RAM_part_LRU
+			cout << " ----- RAM experiment for LRU: ";
+#endif
+#ifdef EXPERIMENT_RAM_part_MFU
+			cout << " ----- RAM experiment for MFU: ";
+#endif
+#ifdef EXPERIMENT_RAM_part_normal
+			cout << " ----- RAM experiment for normal: ";
+#endif
+#ifdef EXPERIMENT_RAM_part_power
+			cout << " ----- RAM experiment for power: ";
+#endif
+#ifdef EXPERIMENT_RAM_part_power_more_predict
+			cout << " ----- RAM experiment for power_more_predict: ";
+#endif
+			cout <<endl;//}
+				
+				const int maxPredictAppForRam = 200;
+				// 各種 ram 大小
+				for (int ram = 8; ram<=8; ram++) {// mason
+					// initial
+					Experiment experiment(maxBackApp, maxPredictAppForRam, &testDMEventPoint, ram);
+					// predict
+#ifdef EXPERIMENT_RAM_part_BEST
+					do {
+						// build bast result
+						PredictResult result;
+						int nowApp = testDMEventPoint.at(experiment.seqPoint);
+						for (int i=experiment.seqPoint+1; i<testDMEventPoint.size(); i++) {
+							int app = testDMEventPoint.at(i);
+							if (nowApp != app && !result.checkRepeat(app)) {
+								result.resultPairs.push_back(make_pair(app, 10000000-i));
+							}
+						}
+						experiment.updatePrediction(&result);
+					} while (experiment.next());
+#endif
+#ifdef EXPERIMENT_RAM_part_LRU
+					do {
+						// build LRU result
+						PredictResult result;
+						for (int i=experiment.seqPoint-1; i>=0; i--) {
+							if (testDMEventPoint.at(experiment.seqPoint) != testDMEventPoint.at(i) && !result.checkRepeat(testDMEventPoint.at(i))) {
+								result.resultPairs.push_back(make_pair(testDMEventPoint.at(i), i));
+							}
+						}
+						experiment.updatePrediction(&result);
+					} while (experiment.next());
+#endif
+#ifdef EXPERIMENT_RAM_part_MFU
+					double parameter = 0;	// level = 0
+					do {
+						// build MFU result
+						Sequence shortSeq = experiment.buildShortSeq();
+						PredictResult result = gspPredict.predictResult_byMethod(
+						                                    GSP_Predict::ConstLevel,
+																								&parameter,
+																								&shortSeq,
+																								maxPredictAppForRam);
+						experiment.updatePrediction(&result);
+					} while (experiment.next());
+#endif
+#ifdef EXPERIMENT_RAM_part_normal
+					do {
+						Sequence shortSeq = experiment.buildShortSeq();
+						PredictResult result = gspPredict.predictResult_normal(&shortSeq, maxPredictApp);
+						experiment.updatePrediction(&result);
+					} while (experiment.next());
+#endif
+#ifdef EXPERIMENT_RAM_part_power
+					// parametor
+					double base = 0.00001;
+					double powerNum = 3;
+					double parameter[2];
+					parameter[0] = base;
+					parameter[1] = powerNum;
+					do {
+						// build power result
+						Sequence shortSeq = experiment.buildShortSeq();
+						PredictResult result = gspPredict.predictResult_byMethod(
+																								GSP_Predict::powerOfLevel,
+																								parameter,
+																								&shortSeq,
+																								maxPredictAppForRam);
+						experiment.updatePrediction(&result);
+					} while (experiment.next());
+#endif
+#ifdef EXPERIMENT_RAM_part_power_more_predict
+					// parametor
+					//double base = 0.00001;
+					double base = 0;
+					double powerNum = 10;
+					double parameter[2];
+					parameter[0] = base;
+					parameter[1] = powerNum;
+					double parameterForMFU = 0; // level = 0
+					do {
+						Sequence shortSeq = experiment.buildShortSeq();
+						// MFU result
+						PredictResult MFUresult = gspPredict.predictResult_byMethod(
+																									GSP_Predict::ConstLevel,
+																									&parameterForMFU,
+																									&shortSeq,
+																									maxPredictAppForRam);
+						// build power result
+						PredictResult result = gspPredict.predictResult_forwardPredict_byMethod(
+																								1,
+																								4,
+																								GSP_Predict::powerOfLevel,
+																								parameter,
+																								&shortSeq,
+																								maxPredictAppForRam);
+						MFUresult *= 0.00001;
+						result += MFUresult;
+						result.sort();
+						experiment.updatePrediction(&result);
+					} while (experiment.next());
+#endif
+					// output predict result
+					printf("%2d|", ram);
+					experiment.memoryPrint();
+					cout<<endl;
+				}
+			}
+#endif
+			
+			// xxx) GSP normal & power compare
+#ifdef EXPERIMENT_GSP_normal_and_power_compare
+			{ cout << " ----- GSP - normal & power predict:" <<endl;
+				//{ initial
+				Experiment normalExp(maxBackApp, maxPredictApp, &testDMEventPoint);
+				Experiment powerExp (maxBackApp, maxPredictApp, &testDMEventPoint);
+				// parameter initial | method: weight = base + powerNum ^ level(0~n)
+				double base = 1;
+				double powerNum = 15;
+				double parameter[2];
+				parameter[0] = base;
+				parameter[1] = powerNum;//}
+				
+				//{ predict
+				do {
+					Sequence norShortSeq = normalExp.buildShortSeq();
+					Sequence powShortSeq = powerExp.buildShortSeq();
+					PredictResult norResult = gspPredict.predictResult_normal(&norShortSeq, maxPredictApp);
+					PredictResult powResult = gspPredict.predictResult_byMethod(GSP_Predict::powerOfLevel, parameter, &powShortSeq, maxPredictApp);
+					int norPredict = normalExp.updatePrediction(&norResult);
+					int powPredict = powerExp.updatePrediction(&powResult);
+					
+				} while (normalExp.next() && powerExp.next());//}
+				
+				//{ output
+				normalExp.print();
+				powerExp.print();
+				cout<<endl;//}
+			}
+#endif
 		}
 		
 		/** 建立 sequence 方便搜尋和預測
+		 *  return : 順序是由舊->新
 		 *  (bug) 不會比較 seqEnd 有沒有比 maxBackApp 還長，所以可能會往後挖過頭
 		 *  (bug) 也不會比較 seqEnd 有沒有超過 DMEventPoint
 		 */
-		Sequence buildShortSequence(int seqEnd, int maxBackApp, const vector<int> *DMEventPoint) {
+		Sequence buildShortSequence(int seqEnd, int maxBackApp, const vector<elemType> *DMEventPoint) {
 			Sequence shortSeq;
 			// 整理 sequence
 			for (int j=seqEnd-maxBackApp; j<=seqEnd; j++) {
@@ -778,7 +1119,7 @@ class DataMining {
 				tmpItem.item.push_back(DMEventPoint->at(j));
 				shortSeq.itemset.push_back(tmpItem);
 			}
-			//shortSeq.Output();
+			
 			return shortSeq;
 		}//}
 		
@@ -788,7 +1129,7 @@ class DataMining {
 		 * 和下面的 buildtrainingDMEventPoint 一樣不用
 		 */
     /*bool getUserPattern(vector<pair<int, int> > *usePattern, vector<Event> *eventVec) {
-      // 看螢幕"暗著"的時間間隔 // mason
+      // 看螢幕"暗著"的時間間隔
       cout << "    ========= Interval Time > " << intervalTime.hour << " hour ==========" <<endl;
       cout << "              start                     end     interval" <<endl;
       Event *screenChgOnShut, *screenChgOffShut;

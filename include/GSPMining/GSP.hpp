@@ -49,11 +49,11 @@ class GSP {
 		void Filter(const vector<int> *filterVec);
 		
 		// Output k-th candidateSet.
-		void Output(const vector<Sequence> *candidateSet, int id);
+		void Output( vector<Sequence> *candidateSet, int id);
 		
 		// 將 appCountMap 和 miningPatternsMap 一起輸出
 		void OutputAll();
-		void OutpurAllTop();
+		void OutputAllTop();
 };
 
 #endif /* GSP_HPP */
