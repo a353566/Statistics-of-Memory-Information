@@ -12,6 +12,7 @@
 
 #include "tool/DateTime.hpp"
 #include "tool/StringToNumber.hpp"
+#include "tool/SubCharArray.hpp"
 #include "AppInfo.hpp"
 
 using namespace std;
@@ -91,7 +92,7 @@ class CollectionFile {
           }
           char* temp = strstr(getLine, "phoneID:");
           if (temp != NULL) {
-            phoneID = string(temp+8);
+            phoneID = string(temp+8,16);
           }
         } else {
 					cout << "(error) CollectionFile::openFileAndRead(): Unable to read the start line. File: " << fileName <<endl;
@@ -383,7 +384,7 @@ class CollectionFile {
       return date < otherFile.date;
     };
     
-  private:
+  //private:
 		/** 剪取中間某一段資料
 		 *  charArray : 整段資料 (ex: name|15989|null|658|0|9|)
 		 *  size : charArray 長度 (ex: 25)
@@ -392,7 +393,7 @@ class CollectionFile {
 		 *  return : 0    1     2    3   4 5  (ps: 以上面為例)
 		 *           name|15989|null|658|0|9|
 		 */
-    string subCharArray(const char* charArray, int size, char subUnit, int whichData) {
+    /*string subCharArray(const char* charArray, int size, char subUnit, int whichData) {
       if (whichData<0)  // 防呆
         return string("");
       
@@ -414,6 +415,6 @@ class CollectionFile {
       }
       
       return string("");
-    }
+    }*/
 };
 #endif /* COLLECTION_FILE_HPP */

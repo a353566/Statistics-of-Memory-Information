@@ -1,3 +1,4 @@
 *.o
-Main
-data/*
+CollectionMain
+ExperimentMain
+source/*

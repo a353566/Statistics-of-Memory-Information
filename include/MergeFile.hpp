@@ -1,6 +1,7 @@
 #ifndef MERGE_FILE_HPP
 #define MERGE_FILE_HPP
 
+#include <dirent.h>
 #include <vector>
 #include <list>
 #include <string.h>
@@ -27,9 +28,11 @@ using namespace std;
 // ----- debug part -----
 //#define MERGEFILE_debug_Event_happen_times
 //#define MERGEFILE_debug_oomAdj_less_than_0
-//#define MERGEFILE_debug_oomAdj_rate_onEachApp
-#define MERGEFILE_debug_adj_score_relation
-//#define MERGEFILE_debug_IntervalTime
+
+// ----- display some information -----
+//#define MERGEFILE_display_oomAdj_rate_onEachApp
+//#define MERGEFILE_display_IntervalTime
+//#define MERGEFILE_display_the_relation_between_adj_and_score
 
 /** Event : record interesting Point
  *  Now, we record "oom_adj -> 0" and "screen changed" tow thing.
@@ -61,7 +64,75 @@ class Event {
 					this->nextApp = nextApp;
 					this->namePoint = nextApp->namePoint;
 				}
-    };
+				
+				// 存檔 取得保存用的字串
+				string getSaveString() {
+					// 2017-12-16_03.04.28
+					string result;
+					result = to_string(namePoint);
+					result += "_";
+					if (isCreat) {
+						result += "1";
+						result += "_";
+						result += "null";
+					} else {
+						result += "0";
+						result += "_";
+						result += currApp->getSaveString();
+					}
+					result += "_";
+					result += nextApp->getSaveString();
+					result += "_";
+					
+					return result;
+				}
+				
+				// 讀檔
+				bool setData(const char* charArray, int size) {
+					string temp;
+					int value;
+					
+					// 0 : namePoint
+					temp = subCharArray(charArray, size, '_', 0);
+					if (StringToNumber(temp, &value)) {
+						namePoint = value;
+					} else {
+						return false;
+					}
+					
+					// 1 : isCreat
+					temp = subCharArray(charArray, size, '_', 1);
+					if (StringToNumber(temp, &value)) {
+						if (value == 1) {
+							isCreat = true;
+						} else if (value == 0) {
+							isCreat = false;
+						} else {
+							return false;
+						}
+					} else {
+						return false;
+					}
+					
+					// 2 : currApp
+					if (!isCreat) {
+						temp = subCharArray(charArray, size, '_', 2);
+						currApp = new AppInfo();
+						if(!currApp->setData(temp)) {
+							return false;
+						}
+					}
+					
+					// 3 : nextApp
+					temp = subCharArray(charArray, size, '_', 3);
+					nextApp = new AppInfo();
+					if(!nextApp->setData(temp)) {
+						return false;
+					}
+					
+					return true;
+				}
+		};
     
 		// lastTime "useApp" thisDate nextDate
     DateTime *thisDate;		// 紀錄APP的時間點
@@ -74,6 +145,100 @@ class Event {
       isNextScreenOn = false;
     }
 
+		// 存檔 取得保存用的字串
+		string getSaveString() {
+			// 2017-12-16_03.04.28|2017-12-16_03.04.28|1|0|
+			string result;
+			result = thisDate->getSaveString();
+			result += "|";
+			result += nextDate->getSaveString();
+			result += "|";
+			result += (isThisScreenOn)? "1":"0";
+			result += "|";
+			result += (isNextScreenOn)? "1":"0";
+			result += "|";
+			result += to_string(caseVec.size());
+			result += "|";
+			
+			for (auto oneCase = caseVec.begin(); oneCase != caseVec.end(); oneCase++) {
+				result += "\n";
+				result += oneCase->getSaveString();
+			}
+			
+			return result;
+		}
+		
+		// 讀檔
+		bool setData(FILE *file) {
+      int getLineSize = 256;
+			char getLine[getLineSize];
+			string temp;
+			int value;
+			int size;
+			if (fgets(getLine, getLineSize, file) != NULL) {  // 讀一行
+				// 0 : thisDate
+				temp = subCharArray(getLine, getLineSize, '|', 0);
+				thisDate = new DateTime();
+				thisDate->setAllDateTime(temp);
+				// 1 : nextDate
+				temp = subCharArray(getLine, getLineSize, '|', 1);
+				nextDate = new DateTime();
+				nextDate->setAllDateTime(temp);
+				// 2 : isThisScreenOn
+				temp = subCharArray(getLine, getLineSize, '|', 2);
+				if (StringToNumber(temp, &value)) {
+					if (value == 1) {
+						isThisScreenOn = true;
+					} else if (value == 0) {
+						isThisScreenOn = false;
+					} else {
+						return false;
+					}
+				} else {
+					return false;
+				}
+				// 3 : isNextScreenOn
+				temp = subCharArray(getLine, getLineSize, '|', 3);
+				if (StringToNumber(temp, &value)) {
+					if (value == 1) {
+						isNextScreenOn = true;
+					} else if (value == 0) {
+						isNextScreenOn = false;
+					} else {
+						return false;
+					}
+				} else {
+					return false;
+				}
+				// 4 : size
+				temp = subCharArray(getLine, getLineSize, '|', 4);
+				if (StringToNumber(temp, &value)) {
+					size = value;
+				} else {
+					return false;
+				}
+			} else {
+				cout << "(error) Event::setData(FILE *file) on first part" <<endl;
+				fclose(file);
+				return false;
+			}
+			
+			// ----- Case part
+			for (int i=0; i<size; i++) {
+				if (fgets(getLine, getLineSize, file) != NULL) {  // 讀一行
+					Case oneCase;
+					oneCase.setData(getLine, getLineSize);
+					caseVec.push_back(oneCase);
+				} else {
+					cout << "(error) Event::setData(FILE *file) on Case part" <<endl;
+					fclose(file);
+					return false;
+				}
+			}
+			
+			return true;
+		}
+		
     /** 將重複的 app 刪掉
 		 *  if appear : 1st 保留 oom_score 比較小的
 		 *              2nd 保留 appPid 比較小的
@@ -204,7 +369,8 @@ class MergeFile {
           }
         };
 		};
-    
+    string phoneID;
+		
     DateTime beginDate;
     DateTime endDate;
 		
@@ -240,6 +406,9 @@ class MergeFile {
 		 *   collectFileVec : all collect file
 		 */ //{
 		void merge(vector<CollectionFile> *collectFileVec) {
+			// phoneID
+			phoneID = collectFileVec->at(0).phoneID;
+			
 			//{ 收集所有的 app's name 用來之後編號
       for (vector<CollectionFile>::iterator oneCollectFile = collectFileVec->begin();
 					 oneCollectFile != collectFileVec->end(); oneCollectFile++)
@@ -662,7 +831,7 @@ class MergeFile {
 			 *          findRate : 全部 pattern 出現過幾次
 			 *          0~16 : oom_adj 的比例 (佔自己出現過的總比例)
 			 */
-#ifdef MERGEFILE_debug_oomAdj_rate_onEachApp
+#ifdef MERGEFILE_display_oomAdj_rate_onEachApp
       { cout << "    ============== 0 <= oom_adj ==============" <<endl;
         printf("  i findRate(%%)");
         for (int j=0; j<=16; j++) {
@@ -698,7 +867,7 @@ class MergeFile {
 #endif
 			
 			// 4. find out oom_score & oom_adj relation : 找出 oom_score & oom_adj 差別
-#ifdef MERGEFILE_debug_adj_score_relation
+#ifdef MERGEFILE_debug_the_relation_between_adj_and_score
 			{ //string findName("android.process.media");
 				string findName("jp.co.hit_point.tabikaeru");
 				//string findName("com.madhead.tos.zh");
@@ -738,7 +907,7 @@ class MergeFile {
 #endif
 			
 			// 8. find out the Interval Time that is too long : 找出間隔時間 超過此時間 (maxIntervalTime)
-#ifdef MERGEFILE_debug_IntervalTime
+#ifdef MERGEFILE_display_IntervalTime
 			{ DateTime maxIntervalTime;
 				maxIntervalTime.initial();
 				maxIntervalTime.minute = 5;
@@ -772,6 +941,147 @@ class MergeFile {
 			}
 #endif
 		}//}
+
+		//  ┌----------------------┐
+		//  | Save & Read function |
+		/** └----------------------┘
+		 */ //{
+		void SaveData(string folder) {
+			// 開檔
+			FILE *wFile;
+			string fileName;
+			fileName = folder + phoneID;
+			wFile = fopen(fileName.c_str(), "w");
+			
+			//{ 開頭
+			string buffer;
+			buffer = phoneID;
+			buffer += "|";
+			buffer += beginDate.getSaveString();
+			buffer += "|";
+			buffer += endDate.getSaveString();
+			buffer += "|";
+			buffer += to_string(appsChangeTimes);
+			buffer += "|\n";
+			fwrite(buffer.c_str(),1,buffer.size(),wFile);//}
+			
+			//{ allAppNameVec
+			buffer.clear();
+			buffer = to_string(allAppNameVec.size());
+			buffer += "|";
+			for (auto oneName = allAppNameVec.begin(); oneName != allAppNameVec.end(); oneName++) {
+				buffer += "\n";
+				buffer += *oneName;
+				buffer += "|";
+			}
+			buffer += "\n";
+			fwrite(buffer.c_str(),1,buffer.size(),wFile);//}
+			
+			//{ allEventVec
+			buffer.clear();
+			buffer = to_string(allEventVec.size());
+			buffer += "|\n";
+			fwrite(buffer.c_str(),1,buffer.size(),wFile);
+			for (auto oneEvent = allEventVec.begin(); oneEvent != allEventVec.end(); oneEvent++) {
+				buffer.clear();
+				buffer = oneEvent->getSaveString();
+				buffer += "\n";
+				fwrite(buffer.c_str(),1,buffer.size(),wFile);
+			}//}
+			
+			//{ end
+			buffer.clear();
+			buffer = "end";
+			fwrite(buffer.c_str(),1,buffer.size(),wFile);
+		fclose(wFile);//}
+		}
+		
+		bool ReadData(string fileName) {
+      int getLineSize = 1024;
+			char getLine[getLineSize];
+			string temp;
+			int value;
+			
+			// 開檔
+			FILE *rFile;
+			rFile = fopen(fileName.c_str(), "r");
+			
+			//{ ----- initial
+			if (fgets(getLine, getLineSize, rFile) != NULL) {  // 讀一行
+				// 0 : phoneID
+				temp = subCharArray(getLine, getLineSize, '|', 0);
+				phoneID = temp;
+				// 1 : beginDate
+				temp = subCharArray(getLine, getLineSize, '|', 1);
+				beginDate.setAllDateTime(temp);
+				// 2 : endDate
+				temp = subCharArray(getLine, getLineSize, '|', 2);
+				endDate.setAllDateTime(temp);
+				// 3 : appsChangeTimes
+				temp = subCharArray(getLine, getLineSize, '|', 3);
+				if (StringToNumber(temp, &value)) {
+					appsChangeTimes = value;
+				} else {
+					return false;
+				}
+			} else {
+				cout << "(error) MergeFile::ReadData(string fileName) on first line" <<endl;
+				fclose(rFile);
+				return false;
+			}//}
+			
+			//{ ----- allAppNameVec
+			// size
+			int size=0;
+			if (fgets(getLine, getLineSize, rFile) != NULL) {  // 讀一行
+				temp = subCharArray(getLine, getLineSize, '|', 0);
+				if (StringToNumber(temp, &value)) {
+					size = value;
+				} else {
+					return false;
+				}
+			} else {
+				cout << "(error) MergeFile::ReadData(string fileName) on allAppNameVec size part" <<endl;
+				fclose(rFile);
+				return false;
+			}
+			// main
+			for (int i=0; i<size; i++) {
+				if (fgets(getLine, getLineSize, rFile) != NULL) {  // 讀一行
+					temp = subCharArray(getLine, getLineSize, '|', 0);
+					allAppNameVec.push_back(temp);
+				} else {
+					cout << "(error) MergeFile::ReadData(string fileName) on allAppNameVec" <<endl;
+					fclose(rFile);
+					return false;
+				}
+			}//}
+			
+			//{ ----- allEventVec
+			// size
+			size=0;
+			if (fgets(getLine, getLineSize, rFile) != NULL) {  // 讀一行
+				temp = subCharArray(getLine, getLineSize, '|', 0);
+				if (StringToNumber(temp, &value)) {
+					size = value;
+				} else {
+					return false;
+				}
+			} else {
+				cout << "(error) MergeFile::ReadData(string fileName) on allEventVec size part" <<endl;
+				fclose(rFile);
+				return false;
+			}
+			// main
+			for (int i=0; i<size; i++) {
+				Event oneEvent;
+				oneEvent.setData(rFile);
+				allEventVec.push_back(oneEvent);
+			}//}
+			
+			return true;
+		 }//}
+		
 };
 
 #endif /* MERGE_FILE_HPP */

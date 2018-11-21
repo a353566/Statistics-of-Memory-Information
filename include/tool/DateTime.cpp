@@ -1,4 +1,3 @@
-#include <stdio.h>
 #include <string>
 
 #include "DateTime.hpp"
@@ -113,6 +112,29 @@ void DateTime::output() {
 	} else {
 		printf("%4d/%2d/%2d %2d-%2d-%2d", year, month, day, hour, minute, second);
 	}
+}
+
+// 取得保存用的字串
+std::string DateTime::getSaveString() {
+	// 2017-12-16_03.04.28
+	std::string result;
+	result = std::to_string(year);
+	result += "-";
+	if (month<=9) {result += "0";}
+	result += std::to_string(month);
+	result += "-";
+	if (day<=9) {result += "0";}
+	result += std::to_string(day);
+	result += "_";
+	if (hour<=9) {result += "0";}
+	result += std::to_string(hour);
+	result += ".";
+	if (minute<=9) {result += "0";}
+	result += std::to_string(minute);
+	result += ".";
+	if (second<=9) {result += "0";}
+	result += std::to_string(second);
+	return result;
 }
 
 // 比較的是時間的新舊，新的會大於舊的(1:2:3 會大於 1:2:4)

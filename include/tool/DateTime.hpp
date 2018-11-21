@@ -26,6 +26,9 @@ class DateTime {
     
     void output();
     
+		// 取得保存用的字串
+		std::string getSaveString();
+		
     // 此天星期幾
     int WeekDay();
     

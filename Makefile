@@ -1,26 +1,36 @@
-TARGETS = Main
-TOOL = include/tool/DateTime.o include/tool/StringToNumber.o
+COLLECTION = CollectionMain
+EXPERIMENT = ExperimentMain
+SOURCE = ./source/
+DATA = ./data/
+TOOL = include/tool/DateTime.o include/tool/StringToNumber.o include/tool/SubCharArray.o
 GSPMINING = include/GSPMining/GSP.o
 # 設定變數 之後用 $(xxx)即可以使用
 
-my: all
-	./$(TARGETS) ./data/my_0311_0530/
+# 預設跑實驗 ./xxx 是順便執行
+run: clean $(EXPERIMENT)
+	./$(EXPERIMENT) input=$(DATA)
 
-u2: all
-	./$(TARGETS) ./data/u2_0313_0324/
+# 蒐集檔案
+my: clean $(COLLECTION)
+	./$(COLLECTION) input=$(SOURCE)my_0311_0530/ output=$(DATA)
+
+u2: clean $(COLLECTION)
+	./$(COLLECTION) input=$(SOURCE)u2_0313_0324/ output=$(DATA)
 	
-u4: all
-	./$(TARGETS) ./data/u4_0313_0404/
+u4: clean $(COLLECTION)
+	./$(COLLECTION) input=$(SOURCE)u4_0313_0404/ output=$(DATA)
 
-all: clean $(TARGETS)
-# ./xxx 是順便執行
 
+# clean ".PHONY: clean" 表示 "clean" 不是一個真正的檔案目標，只是一個標記
 .PHONY: clean
-# 表示 "clean" 不是一個真正的檔案目標，只是一個標記
 clean:
-	rm -f $(TARGETS)
+	rm -f $(COLLECTION) $(EXPERIMENT)
 
-$(TARGETS): $(TARGETS).cpp $(TOOL) $(GSPMINING)
+	
+$(EXPERIMENT): $(EXPERIMENT).cpp $(TOOL) $(GSPMINING)
+	g++ -o $@ $^ -O3 -std=c++11
+	
+$(COLLECTION): $(COLLECTION).cpp $(TOOL) $(GSPMINING)
 	g++ -o $@ $^ -O3 -std=c++11
 #	g++ -o $@ -I$(RNNLIB) $^ $(libnetcdf_c++.so)
 # -I/aaa/bbb 以"/aaa/bbb"當lib的目錄

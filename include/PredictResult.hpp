@@ -3,7 +3,6 @@
 
 #include <vector>
 #include <iostream>
-#include <map>
 
 using namespace std;
 
@@ -92,16 +91,21 @@ class PredictResult {
 			}
 		}
 		
+		// 將 count 改成機率形式
+		void rateBase() {
+			double base = 1/totalWeight();
+			*this *= base;
+		}
+		
 		// output
 		void output() {
-			cout << "a result: ";
+			printf("\"%5lf\":", totalWeight());
 			for (vector<pair<elemType, double> >::iterator oneApp = resultPairs.begin();
 					 oneApp != resultPairs.end(); oneApp++)
 			{
-				//cout << "(" << oneApp->first << ") ";
-				cout << "(" << oneApp->first << " ," << oneApp->second << ") ";
+				printf("(%3d, %8lf) ", oneApp->first, oneApp->second);
 			}
-			cout <<endl;
+			printf("\n");
 		}
 		
 		// resultPairs 中 weight 的數值 * rate

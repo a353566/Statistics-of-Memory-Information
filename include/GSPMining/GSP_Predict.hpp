@@ -4,14 +4,20 @@
 #include <vector>
 #include <iostream>
 #include <complex>
+#include <map>
 
 #include "GSP.hpp"
 #include "Sequence.hpp"
 #include "../PredictResult.hpp"
-
-//#define GSP_PREDICT_HPP_debug_output_countAppMap // 輸出 countAppMap 排序結果
-//#define similarPattern_debug
 using namespace std;
+
+// ----- display part -----
+//#define GSP_PREDICT_HPP_display_output_countAppMap // 輸出 countAppMap 排序結果
+//#define GSP_PREDICT_HPP_display_similarPattern
+//#define GSP_PREDICT_HPP_display_ProbabilityTable_of_each_prediction
+
+// ----- parameter part -----
+#define GSP_PREDICT_HPP_Probability_threshold 0.0000001
 
 typedef int elemType;
 
@@ -32,7 +38,7 @@ class GSP_Predict {
 			}
 			
 			// 輸出 countAppMap 排序結果
-#ifdef GSP_PREDICT_HPP_debug_output_countAppMap
+#ifdef GSP_PREDICT_HPP_display_output_countAppMap
 			for (map<elemType, int>::iterator iter= countAppMap.begin();
 					 iter!=countAppMap.end(); iter++)
 			{ 
@@ -80,8 +86,7 @@ class GSP_Predict {
 				}
 			}
 			
-			// output debug
-#ifdef similarPattern_debug
+#ifdef GSP_PREDICT_HPP_display_similarPattern
 			usePatt->Output();
 			for (auto oneSPM = similarPattern.begin(); oneSPM!=similarPattern.end(); oneSPM++) {
 				cout << " ----- Level : " << oneSPM->first <<endl;
@@ -504,44 +509,101 @@ class GSP_Predict {
 			return weights;
 		}//}
 		
-		/** 再往前多預測幾次
-		 *  rate : 每層往後的遞減率
-		 *  times : 往前幾次
+		//  ┌------------------┐
+		//  |  ForwardPredict  |
+		/** └------------------┘
+		 *  往前預測
+		 */ //{
+		/**  呼叫用的 function，會負責使用下面的 class 還得到 probability table
+		 *  smaxStep : 設定要往前預測多少步
 		 *  method : 計算的方法 (與 predictResult_byMethod 共用)
 		 *  parameter : 不同方法參數不一樣
 		 *  usePatt(use Pattern) : 目前使用的 APP Pattern
 		 *  maxPredictApp : 總共要預測幾個 APP
-		 *  forwardTime : 往前看幾次
-		 *  return : 預測的結果，不夠 maxPredictApp 數量的話用 (NO_APP, NO_WEIGHT) 補足 (ps:in PredictResult)
+		 *  return : Table 預測的結果
 		 */
-		PredictResult predictResult_forwardPredict_byMethod(double rate, int times, int method, double *parameter, Sequence *usePatt, int maxPredictApp) {
-			// 先取得目前的
-			PredictResult finalResult = predictResult_byMethod(method, parameter, usePatt, maxPredictApp);
-			
-			if (times > 0) { // 繼續往前
-				// 再往前取
-				PredictResult expResult = finalResult;
-				double totalWeight = expResult.totalWeight();
-				for (auto oneApp = expResult.resultPairs.begin(); oneApp != expResult.resultPairs.end(); oneApp++) {
-					if (oneApp->first != PredictResult::NO_APP) {
-						// 新的 result 重要性
-						double weightRate = (oneApp->second / totalWeight) * rate;
-						if (weightRate<0.05) {
-							break;
+		PredictResult predictResult_forwardPredict_byMethod(int maxStep, int method, double *parameter, Sequence *usePatt, int maxPredictApp) {
+			ForwardPredict forwardPredict(maxStep, method, parameter, maxPredictApp, this);
+			return forwardPredict.getProbabilityTable(usePatt);
+		}
+		
+		class ForwardPredict {
+			public :
+				const double P_threshold = GSP_PREDICT_HPP_Probability_threshold; // 多少發生機率以下不計算
+				GSP_Predict *mGSPP;		// 傳自己進去，主要是要用它的資料
+				int maxStep;					// 設定要往前預測多少步
+				int method;						// 計算的方法 (與 predictResult_byMethod 共用)
+				double *parameter;		// 不同方法參數不一樣
+				int maxPredictApp;		// 總共要預測幾個 APP
+				PredictResult *Table; // 1~maxStep
+				
+				ForwardPredict(int maxStep, int method, double *parameter, int maxPredictApp, GSP_Predict *mGSPP) {
+					this->maxStep = maxStep;
+					this->method = method;
+					this->parameter = parameter;
+					this->maxPredictApp = maxPredictApp;
+					this->mGSPP = mGSPP;
+					// Table initial
+					Table = new PredictResult[maxStep+1];
+				}
+				
+				/** 算和取得 Probability Table
+				 *  usePatt(use Pattern) : 目前使用的 APP Pattern
+				 *  return : 預測的結果，不夠 maxPredictApp 數量的話用 (NO_APP, NO_WEIGHT) 補足 (ps:in PredictResult)
+				 */
+				PredictResult getProbabilityTable(Sequence *usePatt) {
+					predictNextTable(1, 1, usePatt);
+					PredictResult finalResult;
+					for (int step=1; step<=maxStep; step++) {
+						finalResult += Table[step];
+					}
+					finalResult.sort();
+					
+#ifdef GSP_PREDICT_HPP_display_ProbabilityTable_of_each_prediction
+					static int count = 1;
+					printf("%4d  1:", count++);
+					Table[1].output();
+					for (int step=2; step<=maxStep; step++) {
+						printf("     %2d:", step);
+						Table[step].output();
+					}
+					printf(" All  :");
+					finalResult.output();
+#endif
+					
+					return finalResult;
+				}
+				
+				/** 往後預測表格
+				 *  impactRate : 因為前面往後傳導的影響率
+				 *  step : 往前幾次
+				 *  usePatt(use Pattern) : 目前使用的 APP Pattern
+				 */
+				void predictNextTable(double impactRate, int step, Sequence *usePatt) {
+					// 先取得目前的
+					PredictResult Result = mGSPP->predictResult_byMethod(method, parameter, usePatt, maxPredictApp);
+					
+					// 存到 Table 中
+					Result.rateBase(); // 機率化
+					Result *= impactRate;
+					Table[step] += Result;
+					
+					if (step <= maxStep-1) { // 繼續往前
+						for (auto oneApp = Result.resultPairs.begin(); oneApp != Result.resultPairs.end(); oneApp++) {
+							if (oneApp->first != PredictResult::NO_APP) {
+								// 新的 result 重要性
+								if (oneApp->second<P_threshold) {
+									break;
+								}
+								
+								Sequence forwardPatt = *usePatt;
+								forwardPatt += oneApp->first;
+								predictNextTable(oneApp->second, step+1, &forwardPatt);
+							}
 						}
-						
-						Sequence forwardPatt = *usePatt;
-						forwardPatt += oneApp->first;
-						PredictResult result = predictResult_forwardPredict_byMethod(rate * rate, times-1, method, parameter, &forwardPatt, maxPredictApp);
-						
-						result *= weightRate;
-						finalResult += result;
 					}
 				}
-			}
-			
-			return finalResult;
-		}
+		}; //}
 		
 };
 

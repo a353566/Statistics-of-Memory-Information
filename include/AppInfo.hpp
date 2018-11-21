@@ -4,6 +4,7 @@
 #include <vector>
 #include <string.h>
 #include <iostream>
+#include "tool/SubCharArray.hpp"
 using namespace std;
 
 /** class App
@@ -29,6 +30,53 @@ class AppInfo {
 			oom_score = NULL_DATA;
 			ground = NULL_DATA;
 			oom_adj = NULL_DATA;
+		}
+		
+		// 存檔 取得保存用的字串
+		string getSaveString() {
+			// name|pid|TotalPss|oom_score|ground|oom_adj|
+			std::string result;
+			result = std::to_string(namePoint);
+			result += "|";
+			result += std::to_string(pid);
+			result += "|";
+			result += std::to_string(totalPss);
+			result += "|";
+			result += std::to_string(oom_score);
+			result += "|";
+			result += std::to_string(ground);
+			result += "|";
+			result += std::to_string(oom_adj);
+			result += "|";
+			return result;
+		}
+		
+		// 讀檔
+		bool setData(string data) {
+			const char* charArray = data.c_str();
+			int size = data.size();
+			string temp;
+			int value;
+			
+			temp = subCharArray(charArray, size, '|', 0);
+			if (StringToNumber(temp, &value)) { namePoint = value; } else { return false; }
+			
+			temp = subCharArray(charArray, size, '|', 1);
+			if (StringToNumber(temp, &value)) { pid = value; } else { return false; }
+			
+			temp = subCharArray(charArray, size, '|', 2);
+			if (StringToNumber(temp, &value)) { totalPss = value; } else { return false; }
+			
+			temp = subCharArray(charArray, size, '|', 3);
+			if (StringToNumber(temp, &value)) { oom_score = value; } else { return false; }
+			
+			temp = subCharArray(charArray, size, '|', 4);
+			if (StringToNumber(temp, &value)) { ground = value; } else { return false; }
+			
+			temp = subCharArray(charArray, size, '|', 5);
+			if (StringToNumber(temp, &value)) { oom_adj = value; } else { return false; }
+			
+			return true;
 		}
 		
 		void output() {

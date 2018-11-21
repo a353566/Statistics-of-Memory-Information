@@ -12,29 +12,70 @@
 #include "tool/DateTime.hpp"
 using namespace std;
 
+// 實驗部分要不要 LOOP 起來，主要是用 static 變數可以慢慢加
+//#define MAIN_experiment_LOOP
+
 // add screen status
 //#define EXPERIMENT_add_screen_status  // (bug)
-
-//#define EXPERIMENT_debug_Print_Event  // print Point AppName
 
 // ----- "interval day" of training & test -----
 #define PIN_TESTEND_ON_DATAEND
 #define TRAINING_INTERVAL_DAY 14
 #define TEST_INTERVAL_DAY 7
 
-int TRAINING_INTERVAL_HOUR = 1;
+// ----- 時間間隔實驗 (hour)
+//#define MAIN_Interval_time
+#ifdef MAIN_Interval_time
+// do not change //{
+	#define MAIN_experiment_LOOP
+		int TRAINING_INTERVAL_HOUR = 1;
+	#endif //}
 
 // ----- experiment part -----
-#define EXPERIMENT_ram 10
 //#define EXPERIMENT_GSP_normal_part
 //#define EXPERIMENT_GSP_const_level_part
 //#define EXPERIMENT_GSP_multiply_of_level_part
 //#define EXPERIMENT_GSP_power_of_level_part
 //#define EXPERIMENT_LRU_part
 //#define EXPERIMENT_MFU_part
-//#define EXPERIMENT_RAM_part
+#define EXPERIMENT_ram_part //{
+#ifdef EXPERIMENT_ram_part
+	// == RAM part == (only chooes one)
+	//#define EXPERIMENT_ram_part__BEST
+	//#define EXPERIMENT_ram_part__LRU
+	//#define EXPERIMENT_ram_part__MFU
+	//#define EXPERIMENT_ram_part__normal
+	//#define EXPERIMENT_ram_part__power
+	#define EXPERIMENT_ram_part__forward_predict //{
+	#ifdef EXPERIMENT_ram_part__forward_predict
+		#define EXPERIMENT_ram_part__forward_predict_fast_ver
+		// ----- FAN (Forward Application Number) ----- 
+		#define EXPERIMENT_FAN 4 // Forward Application Number
+		#define EXPERIMENT_increase_FAN // increase FAN
+		#define EXPERIMENT_increase_FAN_head 1
+		#define EXPERIMENT_increase_FAN_end 9
+		// do not change //{
+			#ifndef EXPERIMENT_increase_FAN // single FAN (not define)
+				static int FAN=EXPERIMENT_FAN;
+			#else  // increase FAN
+				#define MAIN_experiment_LOOP
+				static int FAN=EXPERIMENT_increase_FAN_head;
+			#endif //}
+	#endif //}
+#endif//}
 
 //#define EXPERIMENT_GSP_normal_and_power_compare // xxx)
+
+// --- parameter part -----
+#define EXPERIMENT_default_ram 1 // ram
+#define EXPERIMENT_ram_head 1 // head to end of ram
+#define EXPERIMENT_ram_end 25
+#define EXPERIMENT_base 0.00000000001 // power 0.000000001 (8個0)是極限
+#define EXPERIMENT_power 10
+
+// ----- display information -----
+//#define EXPERIMENT_debug_Print_Event  // print Point AppName
+//#define EXPERIMENT_display_detailed_information_of_Memory
 
 class DataMining {
   public :
@@ -54,7 +95,7 @@ class DataMining {
 						int failTimes;
 						
 						Memory() {
-							ram = EXPERIMENT_ram;
+							ram = EXPERIMENT_default_ram;
 							keepApps = new elemType[ram];
 							initial();
 						}
@@ -77,7 +118,8 @@ class DataMining {
 						}
 						
 						int fullMemory(vector<elemType> *testDMEventPoint, int seqPoint) {
-							int head = 0;
+							int head = seqPoint;
+							initial();
 							do {
 								int i;
 								for (i=head; true; i++) {// (bug) 沒有特別觀察最多可以放幾個
@@ -85,14 +127,9 @@ class DataMining {
 										break;
 									}
 								}
-								if (head<seqPoint) {
-									initial();
-									head++;
-								} else {
-									successTimes = 0;
-									failTimes = 0;
-									return i;
-								}
+								successTimes = 0;
+								failTimes = 0;
+								return i;
 							} while(true); 
 						}
 						
@@ -104,27 +141,22 @@ class DataMining {
 							
 							// 看有沒有 hit
 							int which = at(app);
-							if (which != empty) {
-								keepApps[which] = nowUseApp;
+							if (which != empty) { // hit
 								nowUseApp = app;
 								successTimes++;
 								return true;
-							}
-							
-							if (appSize<ram) {
-								keepApps[at(empty)] = nowUseApp;
+							} else if (appSize<ram) { // 沒有 hit 但剛好有多餘的空間
+								keepApps[at(empty)] = app;
 								nowUseApp = app;
 								appSize++;
 								return true;
-							}
-							
-							// 確實 miss
-							if (extraApp == empty) {
+							} else if (extraApp == empty) { // 確實 miss
 								extraApp = nowUseApp;
+								keepApps[at(nowUseApp)] = app;
 								nowUseApp = app;
 								failTimes++;
 								return false;
-							} else {
+							} else { // error
 								cout << "(error) Memory::addUseApp(): extraApp isn't empty" <<endl;
 								return false;
 							}
@@ -138,19 +170,30 @@ class DataMining {
 								int important = result->predict(extraApp);
 								importantMap.insert(make_pair(important, extraApp));
 								for (int i=0; i<ram; i++) {
-									important = result->predict(keepApps[i]);
+									if (keepApps[i] == nowUseApp) {
+										important = 0;
+									} else {
+										important = result->predict(keepApps[i]);
+									}
 									importantMap.insert(make_pair(important, keepApps[i]));
 								}
 								
-								printf("%4d: ", failTimes);
 								auto app = importantMap.begin();
 								for (int i=0; i<ram; i++) {
-									printf("%6d:%3d |", app->first, app->second);
 									keepApps[i] = app->second;
 									app++;
 								}
-								printf("  |  %6d:%3d\n", app->first, app->second);
 								extraApp = empty;
+								
+								#ifdef EXPERIMENT_display_detailed_information_of_Memory
+									printf("%4d: ", failTimes);
+									app = importantMap.begin();
+									for (int i=0; i<ram; i++) {
+										printf("%6d:%3d |", app->first, app->second);
+										app++;
+									}
+									printf("- %6d:%3d\n", app->first, app->second);
+								#endif
 								
 								return true;
 							}
@@ -227,7 +270,7 @@ class DataMining {
 				// 看有沒有下一個
 				bool next() {
 					seqPoint++;
-					return seqPoint<testDMEventPoint->size()-1;  // -1是要被預測的那一個
+					return seqPoint < testDMEventPoint->size()-1;  // -1是要被預測的那一個
 				}
 				
 				// return shortSeq
@@ -935,43 +978,36 @@ class DataMining {
 #endif
 			
 			// 7) RAM
-#ifdef EXPERIMENT_RAM_part
-// == RAM part == (only chooes one)
-//#define EXPERIMENT_RAM_part_BEST
-//#define EXPERIMENT_RAM_part_LRU
-//#define EXPERIMENT_RAM_part_MFU
-//#define EXPERIMENT_RAM_part_normal
-//#define EXPERIMENT_RAM_part_power
-#define EXPERIMENT_RAM_part_power_more_predict  // 未完成
+#ifdef EXPERIMENT_ram_part
 			{
 				//{ tital output
-#ifdef EXPERIMENT_RAM_part_BEST
-			cout << " ----- RAM experiment for BEST: ";
+#ifdef EXPERIMENT_ram_part__BEST
+				cout << " ----- RAM experiment for BEST: ";
 #endif
-#ifdef EXPERIMENT_RAM_part_LRU
-			cout << " ----- RAM experiment for LRU: ";
+#ifdef EXPERIMENT_ram_part__LRU
+				cout << " ----- RAM experiment for LRU: ";
 #endif
-#ifdef EXPERIMENT_RAM_part_MFU
-			cout << " ----- RAM experiment for MFU: ";
+#ifdef EXPERIMENT_ram_part__MFU
+				cout << " ----- RAM experiment for MFU: ";
 #endif
-#ifdef EXPERIMENT_RAM_part_normal
-			cout << " ----- RAM experiment for normal: ";
+#ifdef EXPERIMENT_ram_part__normal
+				cout << " ----- RAM experiment for normal: ";
 #endif
-#ifdef EXPERIMENT_RAM_part_power
-			cout << " ----- RAM experiment for power: ";
+#ifdef EXPERIMENT_ram_part__power
+				cout << " ----- RAM experiment for power: ";
 #endif
-#ifdef EXPERIMENT_RAM_part_power_more_predict
-			cout << " ----- RAM experiment for power_more_predict: ";
+#ifdef EXPERIMENT_ram_part__forward_predict
+				cout << " ----- RAM experiment for power_more_predict: FAN=" << FAN;
 #endif
-			cout <<endl;//}
+				cout <<endl;//}
 				
 				const int maxPredictAppForRam = 200;
 				// 各種 ram 大小
-				for (int ram = 8; ram<=8; ram++) {// mason
+				for (int ram = EXPERIMENT_ram_head; ram<=EXPERIMENT_ram_end; ram++) {
 					// initial
 					Experiment experiment(maxBackApp, maxPredictAppForRam, &testDMEventPoint, ram);
 					// predict
-#ifdef EXPERIMENT_RAM_part_BEST
+#ifdef EXPERIMENT_ram_part__BEST
 					do {
 						// build bast result
 						PredictResult result;
@@ -985,7 +1021,7 @@ class DataMining {
 						experiment.updatePrediction(&result);
 					} while (experiment.next());
 #endif
-#ifdef EXPERIMENT_RAM_part_LRU
+#ifdef EXPERIMENT_ram_part__LRU
 					do {
 						// build LRU result
 						PredictResult result;
@@ -997,7 +1033,7 @@ class DataMining {
 						experiment.updatePrediction(&result);
 					} while (experiment.next());
 #endif
-#ifdef EXPERIMENT_RAM_part_MFU
+#ifdef EXPERIMENT_ram_part__MFU
 					double parameter = 0;	// level = 0
 					do {
 						// build MFU result
@@ -1010,20 +1046,20 @@ class DataMining {
 						experiment.updatePrediction(&result);
 					} while (experiment.next());
 #endif
-#ifdef EXPERIMENT_RAM_part_normal
+#ifdef EXPERIMENT_ram_part__normal
 					do {
 						Sequence shortSeq = experiment.buildShortSeq();
 						PredictResult result = gspPredict.predictResult_normal(&shortSeq, maxPredictApp);
 						experiment.updatePrediction(&result);
 					} while (experiment.next());
 #endif
-#ifdef EXPERIMENT_RAM_part_power
+#ifdef EXPERIMENT_ram_part__power
 					// parametor
-					double base = 0.00001;
-					double powerNum = 3;
+					double base = EXPERIMENT_base;
+					double power = EXPERIMENT_power;
 					double parameter[2];
 					parameter[0] = base;
-					parameter[1] = powerNum;
+					parameter[1] = power;
 					do {
 						// build power result
 						Sequence shortSeq = experiment.buildShortSeq();
@@ -1035,17 +1071,24 @@ class DataMining {
 						experiment.updatePrediction(&result);
 					} while (experiment.next());
 #endif
-#ifdef EXPERIMENT_RAM_part_power_more_predict
+#ifdef EXPERIMENT_ram_part__forward_predict
 					// parametor
-					//double base = 0.00001;
-					double base = 0;
-					double powerNum = 10;
+					double base = 0; // on below
+					double power = EXPERIMENT_power;
 					double parameter[2];
 					parameter[0] = base;
-					parameter[1] = powerNum;
+					parameter[1] = power;
 					double parameterForMFU = 0; // level = 0
+#ifdef EXPERIMENT_ram_part__forward_predict_fast_ver
+					// 靜態宣告 才不會重跑就消失 //mason
+					static map<int, PredictResult> allResult;
+					if (ram==1) { // ram 為 1 的時候，需要重新設定
+						allResult.clear();
+					}
+#endif
 					do {
 						Sequence shortSeq = experiment.buildShortSeq();
+#ifndef EXPERIMENT_ram_part__forward_predict_fast_ver // not define
 						// MFU result
 						PredictResult MFUresult = gspPredict.predictResult_byMethod(
 																									GSP_Predict::ConstLevel,
@@ -1054,16 +1097,40 @@ class DataMining {
 																									maxPredictAppForRam);
 						// build power result
 						PredictResult result = gspPredict.predictResult_forwardPredict_byMethod(
-																								1,
-																								4,
+																								FAN, // Forward App Number
 																								GSP_Predict::powerOfLevel,
 																								parameter,
 																								&shortSeq,
 																								maxPredictAppForRam);
-						MFUresult *= 0.00001;
+						MFUresult.rateBase();
+						MFUresult *= EXPERIMENT_base;
 						result += MFUresult;
 						result.sort();
 						experiment.updatePrediction(&result);
+#else
+						// 第一次跑的話要從新跑結果
+						if (ram==1) {
+							// MFU result
+							PredictResult MFUresult = gspPredict.predictResult_byMethod(
+																										GSP_Predict::ConstLevel,
+																										&parameterForMFU,
+																										&shortSeq,
+																										maxPredictAppForRam);
+							// build power result
+							PredictResult result = gspPredict.predictResult_forwardPredict_byMethod(
+																									FAN, // Forward App Number
+																									GSP_Predict::powerOfLevel,
+																									parameter,
+																									&shortSeq,
+																									maxPredictAppForRam);
+							MFUresult.rateBase();
+							MFUresult *= EXPERIMENT_base;
+							result += MFUresult;
+							result.sort();
+							allResult[experiment.seqPoint] = result;
+						}
+						experiment.updatePrediction(&allResult[experiment.seqPoint]);
+#endif
 					} while (experiment.next());
 #endif
 					// output predict result
@@ -1074,7 +1141,7 @@ class DataMining {
 			}
 #endif
 			
-			// xxx) GSP normal & power compare
+			// xxx) GSP normal & power compare // A little bird told me that has some bug!!!!!
 #ifdef EXPERIMENT_GSP_normal_and_power_compare
 			{ cout << " ----- GSP - normal & power predict:" <<endl;
 				//{ initial
@@ -1250,5 +1317,24 @@ class DataMining {
       }
     }*/
 };
+
+static void mainOfExperiment(vector<Event> *eventVec, vector<string> *allAppNameVec) {
+#ifndef MAIN_experiment_LOOP // not define
+	DataMining dataMining;
+	dataMining.build(eventVec, allAppNameVec);
+	dataMining.experiment();
+#else
+	while (true) {
+		DataMining dataMining;
+		dataMining.build(eventVec, allAppNameVec);
+		dataMining.experiment();
+#ifdef EXPERIMENT_increase_FAN
+		if (++FAN > EXPERIMENT_increase_FAN_end) {
+			break;
+		}
+#endif
+	}
+#endif
+}
 
 #endif /* DATA_MINING_EXPERIMENT_HPP */
