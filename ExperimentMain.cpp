@@ -6,7 +6,8 @@
 
 // ----- display part -----
 //#define MAIN_display_File_name
-#define CANCEL_MORE_DETAIL_OUTPUT  // 取消所有多餘細節的顯示
+
+#define MORE_DETAIL_OUTPUT  //顯示細節
 
 #include "include/MergeFile.hpp"
 #include "include/DataMiningExperiment.hpp" //mason
@@ -16,13 +17,22 @@ int getdir(string dir, vector<string> &files);  // 取得資料夾中檔案的�
 int main(int argc, char** argv) {
 	//{ ----- parameter initial
 	string inputFolder("./data/");
+	string file("fb5e43235974561d");
 	vector<string> fileVec;
 	for (int i=1; i<argc; i++) {
 		char *temp;
+		// input
 		temp = strstr(argv[i], "input=");
 		if (temp != NULL) {
 			inputFolder = string(temp+6);
 			cout << "input folder is \"" << inputFolder << "\"" <<endl;
+			continue;
+		}
+		// file
+		temp = strstr(argv[i], "file=");
+		if (temp != NULL) {
+			file = string(temp+5);
+			cout << "file is \"" << file << "\"\n" <<endl;
 			continue;
 		}
 	}//}
@@ -35,21 +45,26 @@ int main(int argc, char** argv) {
   }//}
 	
 	string fileName;
-	fileName = inputFolder + fileVec[0];
-	cout << fileName <<endl;
-	
-  // 讀檔
-  MergeFile mergeFile;
-	mergeFile.ReadData(fileName);
-	
-	// 開始實驗
-	mainOfExperiment(&mergeFile.allEventVec, &mergeFile.allAppNameVec); //mason
+	for (auto onefile =fileVec.begin(); onefile!=fileVec.end(); onefile++) {
+		if (*onefile == file) {
+					
+			fileName = inputFolder + *onefile;
+			
+			// 讀檔
+			MergeFile mergeFile;
+			mergeFile.ReadData(fileName);
+			mergeFile.filter();
+			//string outputFolder("./data/no38");
+			//mergeFile.SaveData(outputFolder);
+			
+			// 開始實驗
+			mainOfExperiment(&mergeFile.allEventVec, &mergeFile.allAppNameVec); //mason
+		}
+	}
 
-#ifndef CANCEL_MORE_DETAIL_OUTPUT
-  cout << " ┌------┐\n" <<
-	        " | over |\n" <<
-					" └------┘"   <<endl;
-#endif
+  cout << " ┌-----------------┐\n" <<
+	        " | experiment over |\n" <<
+					" └-----------------┘"   <<endl;
   return 0;
 }
 

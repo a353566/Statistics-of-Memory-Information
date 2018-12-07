@@ -25,6 +25,7 @@ class DateTime {
     bool setDate(std::string fileDate);
     
     void output();
+    void output_colon_ver();
     
 		// 取得保存用的字串
 		std::string getSaveString();

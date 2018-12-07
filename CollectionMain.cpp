@@ -6,7 +6,7 @@
 
 // ----- display part -----
 //#define MAIN_display_File_name
-#define CANCEL_MORE_DETAIL_OUTPUT  // 取消所有多餘細節的顯示
+#define MORE_DETAIL_OUTPUT  // 顯示細節
 
 #include "include/CollectionFile.hpp"
 #include "include/MergeFile.hpp"
@@ -20,13 +20,14 @@ int main(int argc, char** argv) {
 	string outputFolder("./data/");
 	for (int i=1; i<argc; i++) {
 		char *temp;
+		// input
 		temp = strstr(argv[i], "input=");
 		if (temp != NULL) {
 			inputFolder = string(temp+6);
 			cout << "input folder is \"" << inputFolder << "\"" <<endl;
 			continue;
 		}
-		
+		// output
 		temp = strstr(argv[i], "output=");
 		if (temp != NULL) {
 			outputFolder = string(temp+7);
@@ -74,7 +75,7 @@ int main(int argc, char** argv) {
 #endif
 
   // 輸出數量
-#ifndef CANCEL_MORE_DETAIL_OUTPUT
+#ifdef MORE_DETAIL_OUTPUT
   cout << "收集了多少" << collectFileVec.size() << "檔案" <<endl;
 #endif  
 	
@@ -84,11 +85,9 @@ int main(int argc, char** argv) {
   mergeFile.buildEventVec();
 	mergeFile.SaveData(outputFolder); // save
 
-#ifndef CANCEL_MORE_DETAIL_OUTPUT
-  cout << " ┌------┐\n" <<
-	        " | over |\n" <<
-					" └------┘"   <<endl;
-#endif
+  cout << " ┌-----------------┐\n" <<
+	        " | collection over |\n" <<
+					" └-----------------┘"   <<endl;
   return 0;
 }
 

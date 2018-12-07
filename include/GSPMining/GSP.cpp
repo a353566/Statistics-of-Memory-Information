@@ -199,8 +199,8 @@ int GSP::CountSupport(const Sequence *curSequence) {
 
 // 過濾掉一些沒有用的 pattern ex:只有開關螢幕的 pattern
 void GSP::Filter(const vector<int> *filterVec) {
-	for(int lever = 2;; lever ++) {
-		map<int, vector<Sequence> >::iterator PMIter = miningPatternsMap.find(lever);
+	for(int level = 2;; level ++) {
+		map<int, vector<Sequence> >::iterator PMIter = miningPatternsMap.find(level);
 		if(PMIter != miningPatternsMap.end()) {
 			vector<Sequence> *seqVec;
 			seqVec = &PMIter->second;

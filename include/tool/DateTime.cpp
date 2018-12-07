@@ -114,6 +114,14 @@ void DateTime::output() {
 	}
 }
 
+void DateTime::output_colon_ver() {
+	if (year==0 && month==0 && day==0) {
+		printf("%2d:%2d:%2d", hour, minute, second);
+	} else {
+		printf("%4d/%2d/%2d %2d:%2d:%2d", year, month, day, hour, minute, second);
+	}
+}
+
 // 取得保存用的字串
 std::string DateTime::getSaveString() {
 	// 2017-12-16_03.04.28

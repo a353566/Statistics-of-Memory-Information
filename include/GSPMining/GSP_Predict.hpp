@@ -17,7 +17,7 @@ using namespace std;
 //#define GSP_PREDICT_HPP_display_ProbabilityTable_of_each_prediction
 
 // ----- parameter part -----
-#define GSP_PREDICT_HPP_Probability_threshold 0.0000001
+#define GSP_PREDICT_HPP_Probability_threshold 0.005
 
 typedef int elemType;
 
@@ -509,9 +509,9 @@ class GSP_Predict {
 			return weights;
 		}//}
 		
-		//  ┌------------------┐
-		//  |  ForwardPredict  |
-		/** └------------------┘
+		//  ┌-------------------┐
+		//  |  Forward Predict  |
+		/** └-------------------┘
 		 *  往前預測
 		 */ //{
 		/**  呼叫用的 function，會負責使用下面的 class 還得到 probability table

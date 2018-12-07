@@ -25,17 +25,23 @@ using namespace std;
 #define score_top_threshold 300
 #define score_below_threshold 160
 
+// ----- read write unneededAppArray -----
+#define MERGEFILE_read_write_unneededAppArray
+	#ifdef MERGEFILE_read_write_unneededAppArray
+		//#define MERGEFILE_display_read_write_unneededAppArray
+	#endif
+
 // ----- debug part -----
 //#define MERGEFILE_debug_Event_happen_times
 //#define MERGEFILE_debug_oomAdj_less_than_0
 
 // ----- display some information -----
-//#define MERGEFILE_display_oomAdj_rate_onEachApp
+#define MERGEFILE_display_oomAdj_rate_onEachApp
 //#define MERGEFILE_display_IntervalTime
 //#define MERGEFILE_display_the_relation_between_adj_and_score
 
 /** Event : record interesting Point
- *  Now, we record "oom_adj -> 0" and "screen changed" tow thing.
+ *  Now, we record "oom_adj -> 0" and "screen changed" two thing.
  */
 class Event {
   public :
@@ -70,19 +76,19 @@ class Event {
 					// 2017-12-16_03.04.28
 					string result;
 					result = to_string(namePoint);
-					result += "_";
+					result += "|";
 					if (isCreat) {
 						result += "1";
-						result += "_";
+						result += "|";
 						result += "null";
 					} else {
 						result += "0";
-						result += "_";
+						result += "|";
 						result += currApp->getSaveString();
 					}
-					result += "_";
+					result += "|";
 					result += nextApp->getSaveString();
-					result += "_";
+					result += "|";
 					
 					return result;
 				}
@@ -93,7 +99,7 @@ class Event {
 					int value;
 					
 					// 0 : namePoint
-					temp = subCharArray(charArray, size, '_', 0);
+					temp = subCharArray(charArray, size, '|', 0);
 					if (StringToNumber(temp, &value)) {
 						namePoint = value;
 					} else {
@@ -101,7 +107,7 @@ class Event {
 					}
 					
 					// 1 : isCreat
-					temp = subCharArray(charArray, size, '_', 1);
+					temp = subCharArray(charArray, size, '|', 1);
 					if (StringToNumber(temp, &value)) {
 						if (value == 1) {
 							isCreat = true;
@@ -116,7 +122,7 @@ class Event {
 					
 					// 2 : currApp
 					if (!isCreat) {
-						temp = subCharArray(charArray, size, '_', 2);
+						temp = subCharArray(charArray, size, '|', 2);
 						currApp = new AppInfo();
 						if(!currApp->setData(temp)) {
 							return false;
@@ -124,7 +130,7 @@ class Event {
 					}
 					
 					// 3 : nextApp
-					temp = subCharArray(charArray, size, '_', 3);
+					temp = subCharArray(charArray, size, '|', 3);
 					nextApp = new AppInfo();
 					if(!nextApp->setData(temp)) {
 						return false;
@@ -375,6 +381,7 @@ class MergeFile {
     DateTime endDate;
 		
     vector<string> allAppNameVec;       // 用 collectFileVec 的資料收集所有的 app's name
+		bool *unneededAppArray;							// 不需要用到的 APP function buildEventVec() 一開始會建構
     vector<Point> allPatternVec;        // 所有 pattern
     vector<AppDetail> allAppDetailVec;  // 所有 app 的詳細資料
     /** filterAppName 要被過濾的 APP
@@ -493,7 +500,7 @@ class MergeFile {
 			 *   |  | b) score : oom_score 沒出現過 0~score_below_threshold (0~160)，表示沒有在前景出現過
 			 *   | 為了收集資料的 app (myself)
 			 */ //{
-      bool unneededAppArray[allAppDetailVec.size()];
+      unneededAppArray = new bool[allAppDetailVec.size()];
       for (int i=0; i<allAppDetailVec.size(); i++) {
         // 1. initial
         unneededAppArray[i] = false;
@@ -915,7 +922,7 @@ class MergeFile {
 				for (int i=0; i<allEventVec.size(); i++) {
 					DateTime intervalTime = *allEventVec[i].nextDate - *allEventVec[i].thisDate;
 					if (intervalTime>maxIntervalTime) {
-						// 有必要在輸出
+						// 有必要再輸出
 						if (maxIntervalTimeNum == 0) {
 							cout << "    ============== Interval Time ==============" <<endl;
 							cout << "Interval Time over ";
@@ -969,9 +976,17 @@ class MergeFile {
 			buffer.clear();
 			buffer = to_string(allAppNameVec.size());
 			buffer += "|";
-			for (auto oneName = allAppNameVec.begin(); oneName != allAppNameVec.end(); oneName++) {
+			for (int i=0; i < allAppNameVec.size(); i++) {
 				buffer += "\n";
-				buffer += *oneName;
+#ifdef MERGEFILE_read_write_unneededAppArray
+				/*if (unneededAppArray[i]) {
+					buffer += "0|";
+				} else {
+					buffer += "1|";
+				}*/
+				buffer += unneededAppArray[i] ? "0|" : "1|";
+#endif
+				buffer += allAppNameVec.at(i);
 				buffer += "|";
 			}
 			buffer += "\n";
@@ -1046,17 +1061,36 @@ class MergeFile {
 				return false;
 			}
 			// main
+			unneededAppArray = new bool[size];
 			for (int i=0; i<size; i++) {
 				if (fgets(getLine, getLineSize, rFile) != NULL) {  // 讀一行
+#ifndef MERGEFILE_read_write_unneededAppArray
 					temp = subCharArray(getLine, getLineSize, '|', 0);
 					allAppNameVec.push_back(temp);
+#else
+					temp = subCharArray(getLine, getLineSize, '|', 0);
+					unneededAppArray[i] = (temp=="0") ? true : false;
+					temp = subCharArray(getLine, getLineSize, '|', 1);
+					allAppNameVec.push_back(temp);
+#endif
 				} else {
 					cout << "(error) MergeFile::ReadData(string fileName) on allAppNameVec" <<endl;
 					fclose(rFile);
 					return false;
 				}
 			}//}
-			
+
+#ifdef MERGEFILE_display_read_write_unneededAppArray
+			for (int i=0; i<size; i++) {
+				if (unneededAppArray[i]) {
+					cout << "0|";
+				} else {
+					cout << "1|";
+				}
+				cout << allAppNameVec.at(i) << "|" <<endl;
+			}
+#endif
+
 			//{ ----- allEventVec
 			// size
 			size=0;
@@ -1082,6 +1116,23 @@ class MergeFile {
 			return true;
 		 }//}
 		
+		void filter() {
+			for (auto oneEvent = allEventVec.begin(); oneEvent != allEventVec.end();) {
+				for (auto oneCase = oneEvent->caseVec.begin(); oneCase != oneEvent->caseVec.end();) {
+					if (unneededAppArray[oneCase->namePoint]) {
+						oneCase = oneEvent->caseVec.erase(oneCase);
+					} else {
+						oneCase++;
+					}
+				}
+				
+				if (oneEvent->caseVec.size()==0 && (oneEvent->isThisScreenOn == oneEvent->isNextScreenOn)) {
+					oneEvent = allEventVec.erase(oneEvent);
+				} else {
+					oneEvent++;
+				}
+			}
+		}
 };
 
 #endif /* MERGE_FILE_HPP */

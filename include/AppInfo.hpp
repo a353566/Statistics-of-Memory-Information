@@ -37,17 +37,17 @@ class AppInfo {
 			// name|pid|TotalPss|oom_score|ground|oom_adj|
 			std::string result;
 			result = std::to_string(namePoint);
-			result += "|";
+			result += "_";
 			result += std::to_string(pid);
-			result += "|";
+			result += "_";
 			result += std::to_string(totalPss);
-			result += "|";
+			result += "_";
 			result += std::to_string(oom_score);
-			result += "|";
+			result += "_";
 			result += std::to_string(ground);
-			result += "|";
+			result += "_";
 			result += std::to_string(oom_adj);
-			result += "|";
+			result += "_";
 			return result;
 		}
 		
@@ -58,22 +58,22 @@ class AppInfo {
 			string temp;
 			int value;
 			
-			temp = subCharArray(charArray, size, '|', 0);
+			temp = subCharArray(charArray, size, '_', 0);
 			if (StringToNumber(temp, &value)) { namePoint = value; } else { return false; }
 			
-			temp = subCharArray(charArray, size, '|', 1);
+			temp = subCharArray(charArray, size, '_', 1);
 			if (StringToNumber(temp, &value)) { pid = value; } else { return false; }
 			
-			temp = subCharArray(charArray, size, '|', 2);
+			temp = subCharArray(charArray, size, '_', 2);
 			if (StringToNumber(temp, &value)) { totalPss = value; } else { return false; }
 			
-			temp = subCharArray(charArray, size, '|', 3);
+			temp = subCharArray(charArray, size, '_', 3);
 			if (StringToNumber(temp, &value)) { oom_score = value; } else { return false; }
 			
-			temp = subCharArray(charArray, size, '|', 4);
+			temp = subCharArray(charArray, size, '_', 4);
 			if (StringToNumber(temp, &value)) { ground = value; } else { return false; }
 			
-			temp = subCharArray(charArray, size, '|', 5);
+			temp = subCharArray(charArray, size, '_', 5);
 			if (StringToNumber(temp, &value)) { oom_adj = value; } else { return false; }
 			
 			return true;
