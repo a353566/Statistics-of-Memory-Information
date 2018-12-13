@@ -20,11 +20,11 @@ using namespace std;
 
 // ----- "interval day" of training & test -----
 //#define PIN_TESTEND_ON_DATAEND
-//#define ADD_TIME_SPACE_ON_HEAD // 前面加一些空白時段
-	#define START_SPACE_TIME 0
+#define ADD_TIME_SPACE_ON_HEAD // 前面加一些空白時段
+	#define START_SPACE_TIME 28
 // ----- parameter
-#define TRAINING_INTERVAL_DAY 130
-#define TEST_INTERVAL_DAY 2
+#define TRAINING_INTERVAL_DAY 21
+#define TEST_INTERVAL_DAY 7
 //#define USING_THE_SAME_DATA
 
 // ----- 時間間隔實驗 (hour) // 無視 TRAINING_INTERVAL_DAY 直接從 TRAINING_INTERVAL_increase_time 開始
@@ -47,13 +47,13 @@ using namespace std;
 //#define EXPERIMENT_GSP_const_level_part
 //#define EXPERIMENT_GSP_multiply_of_level_part
 #define EXPERIMENT_GSP_power_of_level_part
-//#define EXPERIMENT_LRU_part
-//#define EXPERIMENT_MFU_part
+#define EXPERIMENT_LRU_part
+#define EXPERIMENT_MFU_part
 //#define EXPERIMENT_ram_part //{
 	#ifdef EXPERIMENT_ram_part
 		//#define EXPERIMENT_ram_part_add_old_memory
 		// == RAM part == (only chooes one)
-		//#define EXPERIMENT_ram_part__BEST
+		#define EXPERIMENT_ram_part__BEST
 		//#define EXPERIMENT_ram_part__LRU
 		//#define EXPERIMENT_ram_part__MFU
 		//#define EXPERIMENT_ram_part__normal
@@ -70,7 +70,7 @@ using namespace std;
 				#define EXPERIMENT_ram_part__forward_predict_add_old_memory_ver
 				// ----- parameter
 				#define EXPERIMENT_FAN 5 // Forward Application Number
-				//#define EXPERIMENT_increase_FAN // increase FAN
+				#define EXPERIMENT_increase_FAN // increase FAN
 				#define EXPERIMENT_increase_FAN_head 1
 				#define EXPERIMENT_increase_FAN_end 9
 					// xxxxx do not change //{
@@ -90,7 +90,7 @@ using namespace std;
 #define EXPERIMENT_maxBackApp 9 // maxBackApp
 #define EXPERIMENT_default_ram 1 // ram
 #define EXPERIMENT_ram_head 1 // head to end of ram
-#define EXPERIMENT_ram_end 25
+#define EXPERIMENT_ram_end 15
 #define EXPERIMENT_base 0.00000000001 // power 0.000000001 (8個0)是極限
 #define EXPERIMENT_power 5
 
@@ -1037,8 +1037,8 @@ class DataMining {
 				cout << "     |     Num |  1 app  |  2 app  |  3 app  | .......  " <<endl;
 				//{ parameter initial | method: weight = base + powerNum ^ level(0~n)
 				double base = 0.00000001;
-				double powerNum = 0;
-				double powerNumMax = 15;
+				double powerNum = 5;
+				double powerNumMax = 5;
 				double powerGrow = 0.05;
 				Experiment lastPrint(maxBackApp, maxPredictApp);//}
 				

@@ -1,4 +1,6 @@
 *.o
 CollectionMain
 ExperimentMain
+parameterM
+parameterManalysis
 source/*
