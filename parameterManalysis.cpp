@@ -8,6 +8,9 @@
 #include "include/tool/StringToNumber.hpp"
 #include "include/tool/SubCharArray.hpp"
 
+#defind TOTAL_LONG 300
+//#define TOTAL_LONG 800
+
 using namespace std;
 int getdir(string dir, vector<string> &files);  // 取得資料夾中檔案的方法
 
@@ -51,15 +54,15 @@ int main(int argc, char** argv) {
   }//}
 	
 	bool first = true;
-	double left[300][2];
-	double table[300][15];
+	double left[TOTAL_LONG][2];
+	double table[TOTAL_LONG][15];
 	int totalFile=0;
-	for (int i=0; i<300; i++) {
+	for (int i=0; i<TOTAL_LONG; i++) {
 		for (int j=0; j<2; j++) {
 			left[i][j]=0;
 		}
 	}
-	for (int i=0; i<300; i++) {
+	for (int i=0; i<TOTAL_LONG; i++) {
 		for (int j=0; j<15; j++) {
 			table[i][j]=0;
 		}
@@ -89,7 +92,7 @@ int main(int argc, char** argv) {
 		}
 		
 		cout << *onefile << " ";
-		for (int i=0; i<300; i++) {
+		for (int i=0; i<TOTAL_LONG; i++) {
 			if (fgets(getLine, getLineSize, file) != NULL) {  // 讀一行
 				line++;
 				string temp;
@@ -116,7 +119,7 @@ int main(int argc, char** argv) {
 	
 	// output
 	cout << "totalFile:" << totalFile <<endl;
-	for (int i=0; i<300; i++) {
+	for (int i=0; i<TOTAL_LONG; i++) {
 		cout << left[i][0]/totalFile << "|" << left[i][1]/fileVec.size();
 		// table
 		for (int j=0; j<15; j++) {

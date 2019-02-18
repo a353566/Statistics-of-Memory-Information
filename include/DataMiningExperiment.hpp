@@ -18,17 +18,28 @@ using namespace std;
 // add screen status
 //#define EXPERIMENT_add_screen_status  // (bug)
 
-// ----- "interval day" of training & test -----
-//#define PIN_TESTEND_ON_DATAEND
-#define ADD_TIME_SPACE_ON_HEAD // 前面加一些空白時段
-	#define START_SPACE_TIME 28
-// ----- parameter
-#define TRAINING_INTERVAL_DAY 21
-#define TEST_INTERVAL_DAY 7
-//#define USING_THE_SAME_DATA
+/** each user trace and test data
+ * ┌----------------┐
+ * |user trace test |
+ * |  U1    33   14 |
+ * |  U2    24    8 |
+ * |  U4    21    7 |
+ * |  U5    21    7 |
+ * └----------------┘
+ */
 
-// ----- 時間間隔實驗 (hour) // 無視 TRAINING_INTERVAL_DAY 直接從 TRAINING_INTERVAL_increase_time 開始
-//#define EXPERIMENT_Interval_time //{
+//{ ----- "interval day" of training & test -----
+//#define PIN_TESTEND_ON_DATAEND
+//#define USING_THE_SAME_DATA
+#define ADD_TIME_SPACE_ON_HEAD // 前面加一些空白時段
+	#define START_SPACE_TIME 32
+// === parameter ===
+#define TRAINING_INTERVAL_DAY 14
+#define TEST_INTERVAL_DAY 7
+//}
+
+//{ ----- 時間間隔實驗 (hour or day) ----- 無視 TRAINING_INTERVAL_DAY 直接從 TRAINING_INTERVAL_increase_time 開始
+//#define EXPERIMENT_Interval_time
 	#ifdef EXPERIMENT_Interval_time
 		// == Interval part == (only chooes one)
 		#define EXPERIMENT_Interval_day
@@ -39,26 +50,26 @@ using namespace std;
 		//}
 	#endif
 //}
-	
+
 // ----- experiment part -----
 //#define EXPERIMENT_parameter_part_print_change_result // 只印出有變化的數據
 
 //#define EXPERIMENT_GSP_normal_part
 //#define EXPERIMENT_GSP_const_level_part
 //#define EXPERIMENT_GSP_multiply_of_level_part
-#define EXPERIMENT_GSP_power_of_level_part
-#define EXPERIMENT_LRU_part
-#define EXPERIMENT_MFU_part
-//#define EXPERIMENT_ram_part //{
+//#define EXPERIMENT_GSP_power_of_level_part
+//#define EXPERIMENT_LRU_part
+//#define EXPERIMENT_MFU_part
+#define EXPERIMENT_ram_part //{
 	#ifdef EXPERIMENT_ram_part
-		//#define EXPERIMENT_ram_part_add_old_memory
+		#define EXPERIMENT_ram_part_add_old_memory
 		// == RAM part == (only chooes one)
-		#define EXPERIMENT_ram_part__BEST
+		//#define EXPERIMENT_ram_part__BEST
 		//#define EXPERIMENT_ram_part__LRU
 		//#define EXPERIMENT_ram_part__MFU
 		//#define EXPERIMENT_ram_part__normal
 		//#define EXPERIMENT_ram_part__power
-		//#define EXPERIMENT_ram_part__forward_predict //{
+		#define EXPERIMENT_ram_part__forward_predict //{
 			#ifdef EXPERIMENT_ram_part__forward_predict
 				// ----- FAN (Forward Application Number) ----- 
 				// fast ver. 可以用比較快的版本
@@ -68,17 +79,17 @@ using namespace std;
 					#endif
 				// add old memory ver. 可加入舊的記憶體 (要 define 上面的 EXPERIMENT_ram_part_add_old_memory)
 				#define EXPERIMENT_ram_part__forward_predict_add_old_memory_ver
-				// ----- parameter
-				#define EXPERIMENT_FAN 5 // Forward Application Number
+				// === parameter ===
+				#define EXPERIMENT_FAN 2 // Forward Application Number
 				#define EXPERIMENT_increase_FAN // increase FAN
-				#define EXPERIMENT_increase_FAN_head 1
-				#define EXPERIMENT_increase_FAN_end 9
-					// xxxxx do not change //{
+				#define EXPERIMENT_increase_FAN_from 1
+				#define EXPERIMENT_increase_FAN_to 9
+					// xxxxx do NOT change //{
 						#ifndef EXPERIMENT_increase_FAN // single FAN (not define)
 							static int FAN=EXPERIMENT_FAN;
 						#else  // increase FAN
 							#define MAIN_experiment_LOOP
-							static int FAN=EXPERIMENT_increase_FAN_head;
+							static int FAN=EXPERIMENT_increase_FAN_from;
 						#endif
 					//}
 			#endif //}
@@ -86,27 +97,32 @@ using namespace std;
 
 //#define EXPERIMENT_GSP_normal_and_power_compare // xxx)
 
-// --- parameter part -----
+//{ ----- parameter part -----
 #define EXPERIMENT_maxBackApp 9 // maxBackApp
 #define EXPERIMENT_default_ram 1 // ram
 #define EXPERIMENT_ram_head 1 // head to end of ram
 #define EXPERIMENT_ram_end 15
 #define EXPERIMENT_base 0.00000000001 // power 0.000000001 (8個0)是極限
 #define EXPERIMENT_power 5
+//}
 
-// ----- display information -----
+//{ ----- display information -----
 //#define EXPERIMENT_debug_Print_Event  // print Point AppName
 //#define EXPERIMENT_display_add_old_memory  // is "add old memory" success ?
 //#define EXPERIMENT_display_detailed_information_of_Memory // 顯示 ram_part 的記憶體內容
 //#define EXPERIMENT_display_launch_count_for_each_App // 為每個 APP 統計啟動的數量 (PS:只統計 training data)
-	//#define EXPERIMENT_display_launch_count_for_each_App_without_zero // 不要輸出次數為0的
+	#define EXPERIMENT_display_launch_count_for_each_App_without_zero // 不要輸出次數為0的
 	#define EXPERIMENT_display_launch_count_for_each_App_print_pattern // 輸出所有 pattern
-#define EXPERIMENT_display_training_and_test_date // 輸出 training & test 的日期及收集數量
+//#define EXPERIMENT_display_training_and_test_date // 輸出 training & test 的日期及收集數量
 	#define EXPERIMENT_display_training_and_test_date_simple_ver // 是否用簡單版 (上面 define 後才有效果)
 
-//   以下比較少用
+// === 以下比較少用 ===
 //#define EXPERIMENT_display_screen_interval_time // 顯示螢幕亮的次數
+//}
 
+//{ ----- debug part -----
+//#define EXPERIMENT_USING_TEST_FUNCTION_DATA // 用測試 pattern 測試演算法
+//}
 
 class DataMining {
   public :
@@ -152,7 +168,7 @@ class DataMining {
 							int head = seqPoint;
 							initial();
 							int i;
-							for (i=head; true; i++) {// (bug) 沒有特別觀察最多可以放幾個
+							for (i=head; true; i++) {//mason (bug) 沒有特別觀察最多可以放幾個
 								if (!addUseApp(testDMEventPoint->at(i))) {
 									break;
 								}
@@ -167,7 +183,6 @@ class DataMining {
 								cout << "(error) Memory::addUseApp(): The same nowUseApp (" << nowUseApp << ")" <<endl;
 								return true;
 							}
-							
 							// 看有沒有 hit
 							int which = at(app);
 							if (which != empty) { // hit
@@ -578,7 +593,49 @@ class DataMining {
 			}//}
 			
       //{ ----- 3. Build two data : 利用 "screen_ON interval" 整理 兩筆資料 (trainingDMEventPoint & testDMEventPoint)
+#ifndef EXPERIMENT_USING_TEST_FUNCTION_DATA
       buildDMEventPoint(&trainingDMEventPoint, &trainingScnPatn, eventVec);
+	#ifndef USING_THE_SAME_DATA
+      buildDMEventPoint(&testDMEventPoint, &testScnPatn, eventVec);
+	#else
+      buildDMEventPoint(&testDMEventPoint, &trainingScnPatn, eventVec);
+	#endif
+#else
+			// End is not within this pattern => [Head, ... , End) => (H, H+1, H+2, ...), End
+			// for training
+			int patternHead = 0;
+			int patternEnd = 0;
+			int roundTotal = 10;
+			int roundCount = roundTotal;
+			for (int i=2; i<=roundTotal; i++) {
+				patternHead = patternEnd;
+				patternEnd += i;
+				for (int j=0; j<roundCount; j++) {
+					for (int item=patternHead; item<patternEnd; item++) {
+						trainingDMEventPoint.push_back(item);
+					}
+				}
+				roundCount--;
+			}
+			
+			for (int item=200; item<230; item++) {
+				trainingDMEventPoint.push_back(item);
+			}
+			// for test
+			patternHead = 0;
+			patternEnd = 0;
+			roundCount = roundTotal;
+			for (int i=2; i<=roundTotal; i++) {
+				patternHead = patternEnd;
+				patternEnd += i;
+				for (int j=0; j<roundCount; j++) {
+					for (int item=patternHead; item<patternEnd; item++) {
+						testDMEventPoint.push_back(item);
+					}
+				}
+				roundCount--;
+			}
+#endif
 			
 #ifdef EXPERIMENT_display_launch_count_for_each_App
 			{
@@ -604,13 +661,8 @@ class DataMining {
 					cout << DMEPtoEvent.at(i) <<endl;
 				}
 			}
-#endif
-			
-#ifndef USING_THE_SAME_DATA
-      buildDMEventPoint(&testDMEventPoint, &testScnPatn, eventVec);
-#else
-      buildDMEventPoint(&testDMEventPoint, &trainingScnPatn, eventVec);
 #endif//}
+
 		
 #ifdef EXPERIMENT_ram_part_add_old_memory
 	#ifdef EXPERIMENT_display_add_old_memory
@@ -747,7 +799,7 @@ class DataMining {
 		/** 將 training、test 中連續一樣的資料刪掉
 		 *  以免後面出現使用連續兩個一樣的 APP
 		 */
-		void removeSameAction(vector<elemType> *DMEventPoint) {
+		static void removeSameAction(vector<elemType> *DMEventPoint) {
 			vector<elemType>::iterator lastIter = DMEventPoint->begin();
 			vector<elemType>::iterator thisIter = DMEventPoint->begin();
 			thisIter++;
@@ -764,7 +816,7 @@ class DataMining {
 		}
 		
 		/** 檢查一下螢幕資料是否有問題 
-		 *  有連續的兩個點連接的螢幕資訊不一樣的話，會出輸警告
+		 *  有連續的兩個點連接的螢幕資訊不一樣的話，會輸出警告
 		 */
 		void checkScreenState(vector<Event> *eventVec) {
 			bool lastScreen = eventVec->at(0).isNextScreenOn;
@@ -1158,6 +1210,7 @@ class DataMining {
 				for (int ram = EXPERIMENT_ram_head; ram<=EXPERIMENT_ram_end; ram++) {
 					// initial
 					Experiment experiment(maxBackApp, maxPredictAppForRam, &testDMEventPoint, ram);
+					//Experiment experiment(maxBackApp, maxPredictAppForRam, &testDMEventPoint, 1);//mason new
 					// predict
 #ifdef EXPERIMENT_ram_part__BEST
 	#ifdef EXPERIMENT_ram_part_add_old_memory
@@ -1436,7 +1489,7 @@ class DataMining {
 					// output predict result
 					printf("%2d|", ram);
 					experiment.memoryPrint();
-					cout<<endl;
+					cout<<endl; //mason new
 				}
 			}
 #endif
@@ -1507,7 +1560,7 @@ static void mainOfExperiment(vector<Event> *eventVec, vector<string> *allAppName
 		TRAINING_INTERVAL_increase_time++;
 	#endif
 	#ifdef EXPERIMENT_increase_FAN
-		if (++FAN > EXPERIMENT_increase_FAN_end) {
+		if (++FAN > EXPERIMENT_increase_FAN_to) {
 			break;
 		}
 	#endif

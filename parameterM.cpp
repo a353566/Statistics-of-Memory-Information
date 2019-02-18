@@ -1,3 +1,6 @@
+//mason 2018/12/13
+// ：重要參數可以在 include/DataMiningExperimentForM.hpp 的 EXPERIMENT_GSP_power_of_level_part 地方改
+
 #include <dirent.h>
 #include <vector>
 #include <string.h>
@@ -17,7 +20,7 @@ int TEST_INTERVAL_DAY;
 #define MORE_DETAIL_OUTPUT  //顯示細節
 
 #include "include/MergeFile.hpp"
-#include "include/DataMiningExperiment.hpp"
+#include "include/DataMiningExperimentForM.hpp"
 using namespace std;
 int getdir(string dir, vector<string> &files);  // 取得資料夾中檔案的方法
 
@@ -64,7 +67,7 @@ int main(int argc, char** argv) {
 	string fileName;
 	for (auto onefile =fileVec.begin(); onefile!=fileVec.end(); onefile++) {
 		if (*onefile == file) {
-					
+			
 			fileName = inputFolder + *onefile;
 			
 			// 讀檔

@@ -1,6 +1,8 @@
 *.o
 CollectionMain
 ExperimentMain
+NewPatternExpMain
 parameterM
+NewPatternParaM
 parameterManalysis
 source/*

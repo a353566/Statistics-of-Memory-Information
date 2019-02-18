@@ -1,7 +1,8 @@
-./parameterM input=./data/ file=143609e134ebdd90 0 14 7 ->M/1
-./parameterM input=./data/ file=143609e134ebdd90 7 14 7 ->M/2
-./parameterM input=./data/ file=143609e134ebdd90 14 14 7 ->M/3
-./parameterM input=./data/ file=143609e134ebdd90 21 14 7 ->M/4
-./parameterM input=./data/ file=143609e134ebdd90 28 14 7 ->M/5
-./parameterM input=./data/ file=143609e134ebdd90 35 14 7 ->M/6
+rm ./M/*.m
+./parameterM input=./data/ file=fb5e43235974561d 0 14 7 ->./M/1.m
+./parameterM input=./data/ file=fb5e43235974561d 7 14 7 ->./M/2.m
+./parameterM input=./data/ file=fb5e43235974561d 14 14 7 ->./M/3.m
+./parameterM input=./data/ file=fb5e43235974561d 21 14 7 ->./M/4.m
+./parameterM input=./data/ file=fb5e43235974561d 28 14 7 ->./M/5.m
+./parameterM input=./data/ file=fb5e43235974561d 35 14 7 ->./M/6.m
 #./parameterManalysis input=./M/
