@@ -13,18 +13,44 @@
 #include "Sequence.hpp"
 using namespace std;
 
-//#define GSP_tree_PredictResult
+//#define GSP_tree_PredictResult // 當初為了拿來加速演算法的比對，不過應該用不到了
+#define default_MIN_SUPPORT 2
+#define default_PATTERN_LONG_MAX 100000
 
 typedef int elemType;
 
 GSP::GSP(vector<elemType> literals) {
 	this->literals = literals;
-	min_support = 3;
+	min_support = 2;
+	pattern_long_max = default_PATTERN_LONG_MAX;
 }
 
 GSP::GSP(vector<elemType> literals, int min_support) {
 	this->literals = literals;
-	this->min_support = min_support;
+	if (min_support >= 1) {
+		this->min_support = min_support;
+	} else {
+		printf("(error) GSP::Constructor(...), min_support is too small (%d), so set default value (%d).\n", min_support, default_MIN_SUPPORT);
+		this->min_support = default_MIN_SUPPORT;
+	}
+	pattern_long_max = default_PATTERN_LONG_MAX;
+}
+
+GSP::GSP(vector<elemType> literals, int min_support, int pattern_long_max) {
+	this->literals = literals;
+	if (min_support >= 1) {
+		this->min_support = min_support;
+	} else {
+		printf("(error) GSP::Constructor(...), min_support is too small (%d), so set default value (%d).\n", min_support, default_MIN_SUPPORT);
+		this->min_support = default_MIN_SUPPORT;
+	}
+	
+	if (pattern_long_max >= 2) {
+		this->pattern_long_max = pattern_long_max;
+	}	else {
+		printf("(error) GSP::Constructor(...), pattern_long_max is too small (%d), so set MIN value (2).\n", pattern_long_max);
+		this->pattern_long_max = 2;
+	}
 }
 
 void GSP::Mining() {
@@ -46,11 +72,11 @@ void GSP::Mining() {
 	miningPatternsMap[2] = candidateSet;
 	
 	// Get 3 and above frequency sequence
-	for(int k = 3;; k ++)
+	for(int k = 3; k<=pattern_long_max; k ++)
 	{
 		candidateSet = JoinPhase(&candidateSet);
 		if(candidateSet.size() == 0) {
-			//cout << "No further " << k-1 << "-frequency patterns." << endl;
+			printf("No further %d-frequency patterns.\n", k-1);
 			break;
 		} else {
 			miningPatternsMap[k] = candidateSet;
@@ -167,20 +193,19 @@ bool GSP::canConnect(const vector<elemType> *frontSeq, const vector<elemType> *b
 // Count candidate set's support
 int GSP::CountSupport(const Sequence *curSequence) {
 	int cnt = 0;
-	//cout << "CountSupport" << endl;
 	// 將 Sequence 轉換成 vector<int>
 	// 方便後面搜尋
 	vector<int> seq;
-	for(int i = 0; i < curSequence->itemset.size(); i ++) {
+	for(int i = 0; i < curSequence->itemset.size(); i++) {
 		seq.push_back(curSequence->itemset[i].item[0]);
 	}
 	
 	// 開始一一搜尋
-	for(int i = 0; i < literals.size(); i ++)
+	for(int i = 0; i < literals.size(); i++)
 	{
 		bool isfind = true;
 		// 開始比對
-		for(int j = 0; j < seq.size(); j ++) {
+		for(int j = 0; j < seq.size(); j++) {
 			// 看如果比對到不一樣的話就跳出，並把 isfind = false
 			if (seq[j] != literals[i+j]) {
 				isfind = false;
@@ -196,6 +221,10 @@ int GSP::CountSupport(const Sequence *curSequence) {
 	
 	return cnt;
 }
+
+// ┌--------------┐
+// |other function|
+// └--------------┘
 
 // 過濾掉一些沒有用的 pattern ex:只有開關螢幕的 pattern
 void GSP::Filter(const vector<int> *filterVec) {
@@ -231,6 +260,61 @@ void GSP::Filter(const vector<int> *filterVec) {
 			}
 		} else {
 			break;
+		}
+	}
+}
+
+// 加入新的 item (一要設定 pattern_long_max, 不然會跑不完)
+void GSP::addNewOne(elemType newItem) {
+		vector<elemType> literals;
+		int min_support;
+		int pattern_long_max;
+		
+		map<elemType, int> appCountMap;	// 單個 element 出現次數
+		
+		/** 第一個是長度 (Range is from 2 to n, without 1.)
+		 *  Sequence 順序是由舊到新
+		 */
+		map<int, vector<Sequence> > miningPatternsMap;
+	
+	literals.push_back(newItem);
+	
+	// update appCountMap
+	int count = appCountMap[newItem];
+	if (count > 0) {
+		appCountMap[newItem]++;
+	} else {
+		appCountMap[newItem]=1;
+	}
+	
+	// update miningPatternsMap
+	Sequence newPattern;
+	newPattern += newItem;
+	for (int k=2; k<=pattern_long_max; k++) {
+		// 建立要搜尋的 Sequence
+		Sequence tempSeq;
+		if (literals.size() - k <0) {
+			break;
+		}
+		tempSeq += literals[literals.size() - k];
+		newPattern = tempSeq + newPattern;
+		
+		// 搜尋
+		vector<Sequence> *seqList;
+		seqList = &(miningPatternsMap[k]);
+		bool isFind = false;
+		for (auto oneSeq = seqList->begin(); oneSeq!=seqList->end(); oneSeq++) {
+			if (newPattern == *oneSeq) { // 找到相似的話 oneSeq.num++;
+				oneSeq->num++;
+				isFind = true;
+				break;
+			}
+		}
+		
+		// 沒有找到的話，將新的加入到 seqList 中
+		if (!isFind) {
+			newPattern.num = 1;
+			seqList->push_back(newPattern);
 		}
 	}
 }
@@ -313,7 +397,7 @@ void GSP::OutputAllTop() {
 }
 
 
-/** 目前 ESLaterTree   都沒有用，因為是沒有必要的設計
+/** 目前 ESLaterTree   當初為了拿來加速演算法的比對，不過應該用不到了
  *       ESForwardTree
  *       ElemStatsTree
  */

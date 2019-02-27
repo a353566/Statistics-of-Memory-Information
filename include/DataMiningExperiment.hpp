@@ -18,21 +18,33 @@ using namespace std;
 // add screen status
 //#define EXPERIMENT_add_screen_status  // (bug)
 
-/** each user trace and test data
+/** (old data) each user trace and test data
  * ┌----------------┐
  * |user trace test |
  * |  U1    33   14 |
  * |  U2    24    8 |
  * |  U4    21    7 |
+ * |  U4    21    7 |
  * |  U5    21    7 |
  * └----------------┘
+ */
+ 
+/** (new) each user period data
+ * ┌----------------------------------┐
+ * |user blank trace test period      |
+ * |  u1     0    14    7 12/10 ~ 1/14|
+ * |  u2     0    14    7 11/14 ~ 1/13|
+ * |  u3    32    14    7 12/19 ~ 1/9 |
+ * |  u4     7    14    7 11/21 ~ 1/14|
+ * |  u5     0    14    7 11/14 ~ 1/13|
+ * └----------------------------------┘
  */
 
 //{ ----- "interval day" of training & test -----
 //#define PIN_TESTEND_ON_DATAEND
 //#define USING_THE_SAME_DATA
-#define ADD_TIME_SPACE_ON_HEAD // 前面加一些空白時段
-	#define START_SPACE_TIME 32
+#define ADD_TIME_SPACE_ON_HEAD // 前面加一段空白時段
+	#define START_SPACE_TIME 0
 // === parameter ===
 #define TRAINING_INTERVAL_DAY 14
 #define TEST_INTERVAL_DAY 7
@@ -57,10 +69,10 @@ using namespace std;
 //#define EXPERIMENT_GSP_normal_part
 //#define EXPERIMENT_GSP_const_level_part
 //#define EXPERIMENT_GSP_multiply_of_level_part
-//#define EXPERIMENT_GSP_power_of_level_part
+#define EXPERIMENT_GSP_power_of_level_part
 //#define EXPERIMENT_LRU_part
 //#define EXPERIMENT_MFU_part
-#define EXPERIMENT_ram_part //{
+//#define EXPERIMENT_ram_part //{
 	#ifdef EXPERIMENT_ram_part
 		#define EXPERIMENT_ram_part_add_old_memory
 		// == RAM part == (only chooes one)
@@ -81,7 +93,7 @@ using namespace std;
 				#define EXPERIMENT_ram_part__forward_predict_add_old_memory_ver
 				// === parameter ===
 				#define EXPERIMENT_FAN 2 // Forward Application Number
-				#define EXPERIMENT_increase_FAN // increase FAN
+				//#define EXPERIMENT_increase_FAN // increase FAN
 				#define EXPERIMENT_increase_FAN_from 1
 				#define EXPERIMENT_increase_FAN_to 9
 					// xxxxx do NOT change //{
@@ -102,7 +114,7 @@ using namespace std;
 #define EXPERIMENT_default_ram 1 // ram
 #define EXPERIMENT_ram_head 1 // head to end of ram
 #define EXPERIMENT_ram_end 15
-#define EXPERIMENT_base 0.00000000001 // power 0.000000001 (8個0)是極限
+#define EXPERIMENT_base 0.00000000001 // power 0.000000001 (8個0)再小就不會再變化了
 #define EXPERIMENT_power 5
 //}
 
@@ -469,6 +481,16 @@ class DataMining {
       intervalTime.initial();
       intervalTime.hour = 1;
     }
+		
+		void experiment2(vector<Event> *eventVec, vector<string> *allAppNameVec) {
+			// 先用舊的 build 起來 然後再做預測和時間的判斷就好
+			
+			for (auto oneEvent : *eventVec) {
+				// predict without other event
+				;
+				// update
+			}
+		}
 		
 		//  ┌----------------┐
 		//  | build function |
