@@ -9,45 +9,59 @@ using namespace std;
 typedef int elemType;
 
 class PredictResult {
-	public :
-	  static const int NO_APP;
-	  static const int NO_WEIGHT;
+	private :
 		vector<pair<elemType, double> > resultPairs;	// <哪個 app ,count or total weight>
+	public :
+		static const pair<elemType, double> emptyPair;
+	  static const elemType NO_APP;
+	  static const double NO_WEIGHT;
+		
+		PredictResult() {};
 		
 		/** 檢查是否重複
 		 *  checkApp : 要檢查的 App
 		 *  return : true , false
 		 */
-		bool checkRepeat(elemType checkApp) {
+		bool checkRepeat(elemType checkApp) const {
 			return findAppIndex(checkApp) != NO_APP;
 		}
 		
-		/** 回傳 第幾個才預測成功 (1~maxPredictApp or PREDICT_MISS)
+		/** 回傳 第幾個才預測成功 (from 1 to size()-1 or PREDICT_MISS)
 		 *  reallyUseApp : 要比對的 APP (真正下一個用的 APP)
-		 *  maxPredictApp : 最多預測到幾個 APP
-		 *  return : 1 ~ maxPredictApp or
+		 *  return : from 1 to size()-1 or
 		 *           PREDICT_MISS
 		 */
 		const static int PREDICT_MISS;
-		int predict(elemType reallyUseApp) {
-			return predict(reallyUseApp, size());
-		}
-		int predict(elemType reallyUseApp, int maxPredictApp) {
-			for (int i=0; i<maxPredictApp && i<size(); i++) {
+		int getRank(const elemType &reallyUseApp) const {
+			for (int i=0; i<size(); i++) {
 				if (resultPairs.at(i).first == reallyUseApp) {
 					return i+1;
 				}
 			}
 			return PREDICT_MISS;
 		}
+		int getRank(const elemType &reallyUseApp, const elemType &filterUseApp) const {
+			int reallyRank = getRank(reallyUseApp);
+			int filterRank = getRank(filterUseApp);
+			if (reallyRank > filterRank) {
+				return reallyRank-1;
+			} else if (reallyRank < filterRank) {
+				return reallyRank;
+			} else if (reallyRank == PREDICT_MISS) {
+				return PREDICT_MISS;
+			} else {
+				printf("(error) PredictResult::getRank(e, e): e=e=%d", reallyRank);
+				return reallyRank;
+			}
+		}
 		
 		// 回傳結果的長度
-		int size() {
+		int size() const {
 			return resultPairs.size();
 		}
 		
 		// 找此 app 在 vec 第幾個
-		int findAppIndex(elemType findApp) {
+		int findAppIndex(elemType findApp) const {
 			if (findApp == NO_APP) {
 				cout << "(error) PredictResult::findAppIndex() : find NO_APP" <<endl;
 				return NO_APP;
@@ -58,10 +72,52 @@ class PredictResult {
 				}
 			}
 			return NO_APP;
+		};
+		
+		// 從 index 回傳 pair
+		const pair<elemType, double>& getPairWithIndex(int index) const {
+			if (size() == 0 || index >= size()) {
+				return emptyPair;
+				//return NULL;
+			} else {
+				return resultPairs[index];
+			}
+		}
+		
+		bool removePairWithIndex(int index) {
+			if (size() == 0 || index < size()) {
+				return false;
+			} else {
+				resultPairs.erase(resultPairs.begin() + index);
+				return true;
+			}
+		}
+		
+		// 加入一筆 pair，重複的話就更新
+		void updatePair(const pair<elemType, double> &updatePair) {
+			if (!checkRepeat(updatePair.first)) {
+				bool isAdd = false;
+				for (auto onePair =resultPairs.begin(); onePair !=resultPairs.end(); onePair++) {
+					if (updatePair.second > onePair->second) {
+						resultPairs.insert(onePair, updatePair);
+						isAdd = true;
+						return;
+					}
+				}
+				if (!isAdd) {
+					resultPairs.push_back(updatePair);
+					return;
+				}
+			} else {
+				// App is already in PredictResult, so update this, and sort.
+				resultPairs[findAppIndex(updatePair.first)].second = updatePair.second;
+				sort();
+				return;
+			}
 		}
 		
 		// 取得 weight 的總和
-		double totalWeight() {
+		double totalWeight() const {
 			double total = 0;
 			for (auto oneApp = resultPairs.begin(); oneApp != resultPairs.end(); oneApp++) {
 				if (oneApp->first != NO_APP) {
@@ -97,15 +153,17 @@ class PredictResult {
 			*this *= base;
 		}
 		
+		void clear() {
+			resultPairs.clear();
+		}
+		
 		// output
-		void output() {
+		void output() const {
 			printf("\"%5lf\":", totalWeight());
-			for (vector<pair<elemType, double> >::iterator oneApp = resultPairs.begin();
-					 oneApp != resultPairs.end(); oneApp++)
+			for (auto oneApp = resultPairs.begin(); oneApp != resultPairs.end(); oneApp++)
 			{
 				printf("(%3d, %8lf) ", oneApp->first, oneApp->second);
 			}
-			printf("\n");
 		}
 		
 		// resultPairs 中 weight 的數值 * rate
@@ -129,10 +187,17 @@ class PredictResult {
 					}
 				}
 			}
+			sort();
+		}
+		
+		// 加入一筆 pair，重複的話就更新
+		void operator += (const pair<elemType, double> &addPair) {
+			updatePair(addPair);
 		}
 };
 
 const int PredictResult::NO_APP = -1000;
-const int PredictResult::NO_WEIGHT = -1001;
+const pair<elemType, double> PredictResult::emptyPair = make_pair(NO_APP, NO_WEIGHT);
+const double PredictResult::NO_WEIGHT = -100110;
 const int PredictResult::PREDICT_MISS = 100002;
 #endif /* PREDICT_RESULT_HPP */

@@ -291,7 +291,7 @@ class GSP_Predict {
 					if (LMApp.first >= 0) {
 						// 檢查是否重複
 						if (!result.checkRepeat(LMApp.second)) {
-							result.resultPairs.push_back(make_pair(LMApp.second, LMApp.first));
+							result += make_pair(LMApp.second, LMApp.first);
 						}
 						// 在結果中移除，以方便下次搜尋
 						eraseApp(&simlPattsMap, &LMApp);
@@ -307,7 +307,7 @@ class GSP_Predict {
 			while (result.size() < maxPredictApp && MFUApp != countAppMap.rend()) {
 				// 檢查是否重複 & 是否現在在用
 				if (!result.checkRepeat(MFUApp->second) && !checkNowUse(usePatt, MFUApp->second)) {
-					result.resultPairs.push_back(make_pair(MFUApp->second, 0));
+					result += make_pair(MFUApp->second, 0);
 				}
 				MFUApp++;
 			}
@@ -329,7 +329,8 @@ class GSP_Predict {
 		const static int ConstLevel;
 		const static int multiplyOfLevle;
 		const static int powerOfLevel;
-		PredictResult predictResult_byMethod(int method, double *parameter, Sequence *usePatt, int maxPredictApp) {
+		PredictResult predictResult_byMethod(int method, double *parameter,
+		                                     Sequence *usePatt, int maxPredictApp) {
 			// simlPattsMap(similarPatternsMap) 取得相似的 Pattern
 			map<int, vector<pair<elemType, int> > > simlPattsMap = findSimilarPattern(usePatt);
 			map<int, double> weightMap;
@@ -359,7 +360,7 @@ class GSP_Predict {
 					result.resultPairs.push_back(make_pair(oneApp->second, oneApp->first));
 #else
 					if (!result.checkRepeat(oneApp->second) && !checkNowUse(usePatt, oneApp->second)) {
-						result.resultPairs.push_back(make_pair(oneApp->second, oneApp->first));
+						result += make_pair(oneApp->second, oneApp->first);
 					}
 #endif
 					oneApp++;
@@ -589,16 +590,17 @@ class GSP_Predict {
 					Table[step] += Result;
 					
 					if (step <= maxStep-1) { // 繼續往前
-						for (auto oneApp = Result.resultPairs.begin(); oneApp != Result.resultPairs.end(); oneApp++) {
-							if (oneApp->first != PredictResult::NO_APP) {
+						for (int i=0; i<Result.size(); i++) {
+							const pair<elemType, double> &oneApp = Result.getPairWithIndex(i);
+							if (oneApp.first != PredictResult::NO_APP) {
 								// 新的 result 重要性
-								if (oneApp->second<P_threshold) {
+								if (oneApp.second < P_threshold) {
 									break;
 								}
 								
 								Sequence forwardPatt = *usePatt;
-								forwardPatt += oneApp->first;
-								predictNextTable(oneApp->second, step+1, &forwardPatt);
+								forwardPatt += oneApp.first;
+								predictNextTable(oneApp.second, step+1, &forwardPatt);
 							}
 						}
 					}
@@ -607,7 +609,7 @@ class GSP_Predict {
 		
 };
 
-const int GSP_Predict::ConstLevel = 111;
-const int GSP_Predict::multiplyOfLevle = 222;
-const int GSP_Predict::powerOfLevel = 333;
+const int GSP_Predict::ConstLevel = 101010;
+const int GSP_Predict::multiplyOfLevle = 202020;
+const int GSP_Predict::powerOfLevel = 303030;
 #endif /* GSP_PREDICT_HPP */

@@ -15,6 +15,10 @@ struct Itemset {
 		timestamp = 0;
 	}
 	
+	void clear() {
+		item.clear();
+	}
+	
 	// (bug) 如果 item 沒有排序過的話，那就會出問題
 	bool operator == (const Itemset &another) {
 		// 比較長度
@@ -48,6 +52,10 @@ struct Sequence {
 	Sequence() {
 		tid = 0;
 		num = 0;
+	}
+	
+	void clear() {
+		itemset.clear();
 	}
 	
 	void Output() {

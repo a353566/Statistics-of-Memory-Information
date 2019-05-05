@@ -1,5 +1,5 @@
-#include <dirent.h>
 #include <vector>
+#include <map>
 #include <string.h>
 #include <stdio.h>
 #include <iostream>
@@ -9,17 +9,19 @@
 
 #define MORE_DETAIL_OUTPUT  //顯示細節
 
-#include "include/Event.hpp"
-//#include "include/MergeFile.hpp"
-//#include "include/DataMiningExperiment.hpp" //mason
+#include "include/DataManager.hpp"
+#include "include/EventManager.hpp"
+#include "include/PredictResult.hpp"
+#include "include/PredictionMethod.hpp"
+#include "include/Experiment.hpp"
+#include "include/GSPMining/GSP_Predict.hpp"
 using namespace std;
-int getNameID(string *name, vector<string> *allAppNameVec);
-int getdir(string dir, vector<string> &files);  // 取得資料夾中檔案的方法
 
 int main(int argc, char** argv) {
 	//{ ----- parameter initial
-	string inputFolder("./data/");
-	string file("fb5e43235974561d");
+	string inputFolder("./source/new/");
+	string file("user1,user2,user3,user4,user5");
+	string blankTime("0,0,32,7,0");
 	vector<string> fileVec;
 	for (int i=1; i<argc; i++) {
 		char *temp;
@@ -31,47 +33,49 @@ int main(int argc, char** argv) {
 			continue;
 		}
 		// file
-		temp = strstr(argv[i], "file=");
+		/*temp = strstr(argv[i], "file=");
 		if (temp != NULL) {
 			file = string(temp+5);
 			cout << "file is \"" << file << "\"\n" <<endl;
 			continue;
-		}
+		}*/
 	}//}
 	
-	FileManager mFileManager(inputFolder);
-	mFileManager.initialUserFiles();
-	UserManager userManager;
-	userManager = mFileManager.buildUserManager();
-	mFileManager.saveEventType(userManager.eventTypeVec);
-	/*for (auto oneS: mFileManager.inputFiles) {
+	DataManager mDataManager(inputFolder, file, blankTime);
+	vector<User> userVec = mDataManager.buildUserDatas();
+	EventManager::saveEventType();
+	//EventManager::output(); //debug
+	
+	// ----- add Method
+	vector<PredictionMethod*> methodVec;
+	// --- MRU
+	MRU_Method tempMRU = MRU_Method();
+	methodVec.push_back(&tempMRU);
+	// --- FPA ours (level ver.)
+	double parameter[2];
+	parameter[0] = 0.00000001; // base
+	parameter[1] = 5;          // powerNum
+	FPA_Method_ours tempFPA = FPA_Method_ours(GSP_Predict::powerOfLevel, parameter, 2);
+	methodVec.push_back(&tempFPA);
+	
+	// ----- start experiment
+	Experiment_1 exp1(userVec, methodVec);
+	exp1.start();
+	
+	
+	
+	// debug
+	
+	// all user file
+	/*for (auto oneS: mDataManager.inputFiles) {
 		printf("%s ", oneS.c_str());
 	}
 	printf("\n");*/
 	
-	
-	// debug
+	// user 1 data
 	/*User *tempUser;
-	tempUser = &userManager.userVec.at(0);
+	tempUser = &userVec.at(0);
 	tempUser->output();*/
 	
 	return 0;
-}
-
-
-int getdir(string folder, vector<string> &files) {
-  // 創立資料夾指標
-  DIR *dp;
-  struct dirent *dirp;
-  if((dp = opendir(folder.c_str())) == NULL) {
-    return -1;
-  }
-  // 如果dirent指標非空
-  while((dirp = readdir(dp)) != NULL) {
-    // 將資料夾和檔案名放入vector
-    files.push_back(string(dirp->d_name));
-  }
-  // 關閉資料夾指標
-  closedir(dp);
-  return 0;
 }

@@ -14,12 +14,11 @@
 using namespace std;
 
 typedef int elemType;
-
 class GSP {
 	public :
 		vector<elemType> literals;
 		int min_support;
-		int pattern_long_max;
+		int max_pattern_long;
 		
 		map<elemType, int> appCountMap;	// 單個 element 出現次數
 		
@@ -31,11 +30,13 @@ class GSP {
 		/** 第一個是長度 (Range is from 2 to n, without 1.)
 		 *  literals : source pattern
 		 *  min_support : min support (至少要有多少 count )
-		 *  pattern_long_max : pattern 限制可以有多長
+		 *  max_pattern_long : pattern 限制可以有多長
 		 */
+		GSP();
 		GSP(vector<elemType> literals);
+		GSP(int min_support, int max_pattern_long);
 		GSP(vector<elemType> literals, int min_support);
-		GSP(vector<elemType> literals, int min_support, int pattern_long_max);
+		GSP(vector<elemType> literals, int min_support, int max_pattern_long);
 		
 		void Mining();
 		// First scan the database to get frequency is one itemset.
@@ -59,8 +60,10 @@ class GSP {
 		// 過濾掉一些沒有用的 pattern (ex:只有開關螢幕的 pattern)
 		void Filter(const vector<int> *filterVec);
 		
-		// 加入新的 item (一要設定 pattern_long_max, 不然會跑不完)
+		// 加入新的 item (一要設定 max_pattern_long, 不然會跑不完)
 		void addNewOne(elemType newItem);
+		
+		void clear();
 		
 		// Output k-th candidateSet.
 		void Output( vector<Sequence> *candidateSet, int id);

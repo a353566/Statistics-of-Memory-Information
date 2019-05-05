@@ -128,7 +128,7 @@ using namespace std;
 //#define EXPERIMENT_display_training_and_test_date // 輸出 training & test 的日期及收集數量
 	#define EXPERIMENT_display_training_and_test_date_simple_ver // 是否用簡單版 (上面 define 後才有效果)
 
-// === 以下比較少用 ===
+// === no use ===
 //#define EXPERIMENT_display_screen_interval_time // 顯示螢幕亮的次數
 //}
 
